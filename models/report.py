@@ -42,7 +42,10 @@ class QuadraticReport(models.Model):
     # Optional for snapshots created before grouping by ledger account. Their
     # original payload, journal and exported bytes must remain untouched.
     account_id = fields.Many2one("account.account", string="Cuenta contable bancaria", check_company=True, index=True)
-    journal_ids = fields.Many2many("account.journal", string="Diarios incluidos", check_company=True)
+    journal_ids = fields.Many2many(
+        "account.journal", string="Diarios incluidos", check_company=True,
+        context={"active_test": False},
+    )
     journal_id = fields.Many2one("account.journal", string="Diario de control / anterior", check_company=True, index=True)
     currency_id = fields.Many2one("res.currency", string="Moneda", required=True)
     year = fields.Integer("Año", required=True)
