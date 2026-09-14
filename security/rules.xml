@@ -1,0 +1,26 @@
+<odoo>
+    <record id="cq_rule_company" model="ir.rule">
+        <field name="name">Reglas cuadráticas por compañía</field><field name="model_id" ref="model_cq_rule"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="cq_allocation_company" model="ir.rule">
+        <field name="name">Distribuciones cuadráticas por compañía</field><field name="model_id" ref="model_cq_allocation"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="cq_report_company" model="ir.rule">
+        <field name="name">Conciliaciones cuadráticas por compañía</field><field name="model_id" ref="model_cq_report"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="cq_month_company" model="ir.rule">
+        <field name="name">Meses cuadráticos por compañía</field><field name="model_id" ref="model_cq_report_month"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="cq_issue_company" model="ir.rule">
+        <field name="name">Revisión cuadrática por compañía</field><field name="model_id" ref="model_cq_report_issue"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="cq_wizard_company" model="ir.rule">
+        <field name="name">Asistente cuadrático por compañía</field><field name="model_id" ref="model_cq_generate_wizard"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>

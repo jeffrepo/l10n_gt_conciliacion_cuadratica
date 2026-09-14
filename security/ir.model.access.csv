@@ -1,0 +1,10 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_cq_concept_user,cq.concept user,model_cq_concept,account.group_account_user,1,0,0,0
+access_cq_concept_manager,cq.concept manager,model_cq_concept,account.group_account_manager,1,1,1,0
+access_cq_rule_user,cq.rule user,model_cq_rule,account.group_account_user,1,0,0,0
+access_cq_rule_manager,cq.rule manager,model_cq_rule,account.group_account_manager,1,1,1,1
+access_cq_allocation_user,cq.allocation user,model_cq_allocation,account.group_account_user,1,1,1,1
+access_cq_report_user,cq.report user,model_cq_report,account.group_account_user,1,1,1,0
+access_cq_month_user,cq.report.month user,model_cq_report_month,account.group_account_user,1,1,1,0
+access_cq_issue_user,cq.report.issue user,model_cq_report_issue,account.group_account_user,1,1,1,0
+access_cq_generate_user,cq.generate.wizard user,model_cq_generate_wizard,account.group_account_user,1,1,1,1
