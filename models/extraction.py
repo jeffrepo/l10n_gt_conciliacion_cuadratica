@@ -70,7 +70,7 @@ class QuadraticExtraction(models.Model):
         bank_lines = self.env["account.bank.statement.line"].search([
             ("company_id", "=", company.id), ("journal_id", "in", journals.ids),
             ("state", "=", "posted"), ("date", "<=", cutoff),
-        ], order="date, id")
+        ], order="internal_index, id")
         all_banks = self.env["account.journal"].with_context(active_test=False).search([("company_id", "=", company.id), ("type", "=", "bank")])
         owners = defaultdict(set)
         for bank in all_banks:
@@ -158,12 +158,10 @@ class QuadraticExtraction(models.Model):
             before = statements.filtered(lambda stmt: stmt.first_line_index[:8] < start.strftime("%Y%m%d"))
             anchor = before[-1:] or statements[:1]
             opening = anchor.balance_start
-            anchor_line = anchor.line_ids.sorted(lambda line: (line.date, line.id))[:1]
-            anchor_key = (anchor_line.date, anchor_line.id)
             for line in bank_lines:
-                if (line.date, line.id) >= anchor_key and line.date < start:
+                if line.internal_index >= anchor.first_line_index and line.date < start:
                     opening += line.amount
-                elif (line.date, line.id) < anchor_key and line.date >= start:
+                elif line.internal_index < anchor.first_line_index and line.date >= start:
                     opening -= line.amount
         controls = {}
         for number in range(1, month + 1):

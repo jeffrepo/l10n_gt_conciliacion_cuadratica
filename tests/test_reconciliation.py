@@ -110,10 +110,11 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
 
     def test_partial_payment_after_cutoff(self):
         self._statement("2024-01-10", 100, 0, 100, "2024-01-31")
+        payment_journal = self._related_journal("CQPM")
         payment = self.env["account.payment"].create({
-            "journal_id": self.bank.id, "date": "2024-01-20", "amount": 80,
+            "journal_id": payment_journal.id, "date": "2024-01-20", "amount": 80,
             "payment_type": "outbound", "partner_type": "supplier", "partner_id": self.partner_a.id,
-            "payment_method_line_id": self.bank.outbound_payment_method_line_ids[0].id,
+            "payment_method_line_id": payment_journal.outbound_payment_method_line_ids[0].id,
         })
         payment.action_post()
         _, bank_line = self._statement("2024-02-05", -30, 100, 70, "2024-02-29")
@@ -300,6 +301,20 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertEqual(report.month_ids.ledger_bank, 110)
         self.assertEqual(report.month_ids.difference, -10)
         self.assertIn("book_difference", report.issue_ids.mapped("code"))
+
+    def test_opening_respects_odoo_statement_sequence(self):
+        self._statement("2024-01-10", 100, 20, 120, "2024-01-31")
+        # A later-created line can precede the opening anchor on the same date
+        # according to Odoo's statement sequence. ID order would add 20 twice.
+        self.env["account.bank.statement.line"].create({
+            "journal_id": self.bank.id, "date": "2024-01-10", "sequence": 100,
+            "payment_ref": "Earlier bank transaction", "amount": 20,
+            "cq_concept_id": self.in_concept.id,
+        })
+        report = self._report()
+        self.assertEqual(report.month_ids.bank_opening, 0)
+        self.assertEqual(report.month_ids.bank_end, 120)
+        self.assertEqual(report.month_ids.bank_difference, 0)
 
     def test_group_rejects_mixed_currencies(self):
         foreign = self.setup_other_currency("EUR", rates=[("1900-01-01", 0.5)])
