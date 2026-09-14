@@ -1,0 +1,22 @@
+{
+    "name": "Conciliación cuadrática Guatemala",
+    "summary": "Conciliación mensual y XLSX por cuenta bancaria",
+    "version": "19.0.1.0.0",
+    "category": "Accounting/Accounting",
+    "author": "Silva technologies",
+    "license": "LGPL-3",
+    "depends": ["account"],
+    "external_dependencies": {"python": ["xlsxwriter"]},
+    "data": [
+        "security/ir.model.access.csv",
+        "security/rules.xml",
+        "data/concepts.xml",
+        "views/configuration_views.xml",
+        "views/source_views.xml",
+        "views/report_views.xml",
+        "wizard/generate_views.xml",
+        "views/menus.xml",
+    ],
+    "installable": True,
+    "application": False,
+}

@@ -1,0 +1,114 @@
+<odoo noupdate="1">
+    <record id="concept_in_customers_local" model="cq.concept">
+        <field name="code">IN_CUSTOMERS_LOCAL</field><field name="name">Clientes locales</field>
+        <field name="direction">in</field><field name="sequence">10</field><field name="detail">none</field>
+    </record>
+    <record id="concept_in_customers_foreign" model="cq.concept">
+        <field name="code">IN_CUSTOMERS_FOREIGN</field><field name="name">Clientes del exterior</field>
+        <field name="direction">in</field><field name="sequence">20</field><field name="detail">none</field>
+    </record>
+    <record id="concept_in_related" model="cq.concept">
+        <field name="code">IN_RELATED</field><field name="name">Cuentas por cobrar a relacionadas locales y del exterior</field>
+        <field name="direction">in</field><field name="sequence">30</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_in_shareholders" model="cq.concept">
+        <field name="code">IN_SHAREHOLDERS</field><field name="name">Cuentas por cobrar a socios</field>
+        <field name="direction">in</field><field name="sequence">40</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_in_employees" model="cq.concept">
+        <field name="code">IN_EMPLOYEES</field><field name="name">Cuentas por cobrar a empleados</field>
+        <field name="direction">in</field><field name="sequence">50</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_in_advances" model="cq.concept">
+        <field name="code">IN_ADVANCES</field><field name="name">Anticipos de clientes</field>
+        <field name="direction">in</field><field name="sequence">60</field><field name="detail">none</field>
+    </record>
+    <record id="concept_in_interest" model="cq.concept">
+        <field name="code">IN_INTEREST</field><field name="name">Intereses ganados</field>
+        <field name="direction">in</field><field name="sequence">70</field><field name="detail">none</field>
+    </record>
+    <record id="concept_in_transfer" model="cq.concept">
+        <field name="code">IN_TRANSFER</field><field name="name">Transferencias entre cuentas bancarias propias</field>
+        <field name="direction">in</field><field name="sequence">80</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_in_supplier_refunds" model="cq.concept">
+        <field name="code">IN_SUPPLIER_REFUNDS</field><field name="name">Reintegros por devoluciones a proveedores</field>
+        <field name="direction">in</field><field name="sequence">90</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_in_loan_repayments" model="cq.concept">
+        <field name="code">IN_LOAN_REPAYMENTS</field><field name="name">Devoluciones de préstamos otorgados</field>
+        <field name="direction">in</field><field name="sequence">100</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_in_loans" model="cq.concept">
+        <field name="code">IN_LOANS</field><field name="name">Préstamos recibidos</field>
+        <field name="direction">in</field><field name="sequence">110</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_in_other" model="cq.concept">
+        <field name="code">IN_OTHER</field><field name="name">Otros ingresos</field>
+        <field name="direction">in</field><field name="sequence">120</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_out_suppliers" model="cq.concept">
+        <field name="code">OUT_SUPPLIERS</field><field name="name">Proveedores</field>
+        <field name="direction">out</field><field name="sequence">130</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_operating" model="cq.concept">
+        <field name="code">OUT_OPERATING</field><field name="name">Gastos operativos</field>
+        <field name="direction">out</field><field name="sequence">140</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_advances" model="cq.concept">
+        <field name="code">OUT_ADVANCES</field><field name="name">Pagos anticipados</field>
+        <field name="direction">out</field><field name="sequence">150</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_loans" model="cq.concept">
+        <field name="code">OUT_LOANS</field><field name="name">Pago de préstamos</field>
+        <field name="direction">out</field><field name="sequence">160</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_out_dividends" model="cq.concept">
+        <field name="code">OUT_DIVIDENDS</field><field name="name">Pago de dividendos</field>
+        <field name="direction">out</field><field name="sequence">170</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_out_shareholders" model="cq.concept">
+        <field name="code">OUT_SHAREHOLDERS</field><field name="name">Cuentas por pagar a socios</field>
+        <field name="direction">out</field><field name="sequence">180</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_out_related_local" model="cq.concept">
+        <field name="code">OUT_RELATED_LOCAL</field><field name="name">Cuentas por pagar a relacionadas locales</field>
+        <field name="direction">out</field><field name="sequence">190</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_out_related_foreign" model="cq.concept">
+        <field name="code">OUT_RELATED_FOREIGN</field><field name="name">Cuentas por pagar a relacionadas del exterior</field>
+        <field name="direction">out</field><field name="sequence">200</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_out_transfer" model="cq.concept">
+        <field name="code">OUT_TRANSFER</field><field name="name">Transferencias entre cuentas bancarias propias</field>
+        <field name="direction">out</field><field name="sequence">210</field><field name="detail">bank</field>
+    </record>
+    <record id="concept_out_taxes" model="cq.concept">
+        <field name="code">OUT_TAXES</field><field name="name">Pago de impuestos</field>
+        <field name="direction">out</field><field name="sequence">220</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_fees" model="cq.concept">
+        <field name="code">OUT_FEES</field><field name="name">Comisiones bancarias y ACH</field>
+        <field name="direction">out</field><field name="sequence">230</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_checks" model="cq.concept">
+        <field name="code">OUT_CHECKS</field><field name="name">Cheques emitidos</field>
+        <field name="direction">out</field><field name="sequence">240</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_interest" model="cq.concept">
+        <field name="code">OUT_INTEREST</field><field name="name">Intereses pagados</field>
+        <field name="direction">out</field><field name="sequence">250</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_loans_granted" model="cq.concept">
+        <field name="code">OUT_LOANS_GRANTED</field><field name="name">Préstamos otorgados a socios y terceros</field>
+        <field name="direction">out</field><field name="sequence">260</field><field name="detail">partner</field>
+    </record>
+    <record id="concept_out_rejected_deposits" model="cq.concept">
+        <field name="code">OUT_REJECTED_DEPOSITS</field><field name="name">Rechazos de depósitos</field>
+        <field name="direction">out</field><field name="sequence">270</field><field name="detail">none</field>
+    </record>
+    <record id="concept_out_other" model="cq.concept">
+        <field name="code">OUT_OTHER</field><field name="name">Otros egresos</field>
+        <field name="direction">out</field><field name="sequence">280</field><field name="detail">partner</field>
+    </record>
+</odoo>

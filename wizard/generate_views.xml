@@ -1,0 +1,23 @@
+<odoo>
+    <record id="cq_generate_form" model="ir.ui.view">
+        <field name="name">cq.generate.wizard.form</field><field name="model">cq.generate.wizard</field>
+        <field name="arch" type="xml"><form string="Generar conciliación cuadrática">
+            <field name="state" invisible="1"/>
+            <group><field name="company_id" readonly="state == 'result'"/><field name="year" readonly="state == 'result'"/><field name="month" readonly="state == 'result'"/>
+                <field name="all_journals" readonly="state == 'result'"/>
+                <field name="journal_ids" widget="many2many_tags" invisible="all_journals" readonly="state == 'result'" domain="[('company_id', '=', company_id), ('type', '=', 'bank'), ('cq_enabled', '=', True)]" options="{'no_create': True}"/>
+            </group>
+            <p invisible="state != 'select'">Se consultan los extractos, apuntes publicados y conciliaciones existentes en Odoo. Se genera una versión por cuenta, de enero al mes de corte. No es necesario subir archivos aquí.</p>
+            <field name="report_ids" invisible="state != 'result'" readonly="1">
+                <list create="0" edit="0" delete="0"><field name="journal_id"/><field name="currency_id"/><field name="issue_count"/><field name="unclassified_count"/><field name="state"/></list>
+            </field>
+            <footer>
+                <button name="action_calculate" type="object" string="Calcular" class="oe_highlight" invisible="state != 'select'"/>
+                <button name="action_view_reports" type="object" string="Revisar resultados" class="oe_highlight" invisible="state != 'result'"/>
+                <button name="action_download" type="object" string="Descargar archivos" invisible="state != 'result'"/>
+                <button string="Cerrar" special="cancel"/>
+            </footer>
+        </form></field>
+    </record>
+    <record id="action_cq_generate" model="ir.actions.act_window"><field name="name">Generar conciliación</field><field name="res_model">cq.generate.wizard</field><field name="view_mode">form</field><field name="target">new</field></record>
+</odoo>

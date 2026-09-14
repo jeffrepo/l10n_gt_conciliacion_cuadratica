@@ -1,0 +1,41 @@
+<odoo>
+    <record id="cq_journal_form" model="ir.ui.view">
+        <field name="name">account.journal.form.cq</field><field name="model">account.journal</field>
+        <field name="inherit_id" ref="account.view_account_journal_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Conciliación cuadrática" invisible="type != 'bank'" groups="account.group_account_user">
+                    <group>
+                        <field name="cq_enabled"/>
+                        <field name="cq_account_type" invisible="not cq_enabled"/>
+                        <field name="cq_extra_outstanding_account_ids" widget="many2many_tags" invisible="not cq_enabled" domain="[('company_ids', 'in', [company_id]), ('reconcile', '=', True)]"/>
+                    </group>
+                    <p>Se utilizan las cuentas de cobros y pagos pendientes de los métodos de pago del diario. Los extractos deben conservar sus saldos bancarios y su fecha de corte.</p>
+                </page>
+            </xpath>
+        </field>
+    </record>
+    <record id="cq_concept_list" model="ir.ui.view">
+        <field name="name">cq.concept.list</field><field name="model">cq.concept</field>
+        <field name="arch" type="xml"><list><field name="sequence"/><field name="code"/><field name="name"/><field name="direction"/><field name="detail"/><field name="active" optional="hide"/></list></field>
+    </record>
+    <record id="cq_concept_form" model="ir.ui.view">
+        <field name="name">cq.concept.form</field><field name="model">cq.concept</field>
+        <field name="arch" type="xml"><form><sheet><group><field name="name"/><field name="code"/><field name="direction"/><field name="sequence"/><field name="detail"/><field name="active"/></group></sheet></form></field>
+    </record>
+    <record id="cq_rule_list" model="ir.ui.view">
+        <field name="name">cq.rule.list</field><field name="model">cq.rule</field>
+        <field name="arch" type="xml"><list><field name="sequence"/><field name="name"/><field name="company_id" groups="base.group_multi_company"/><field name="journal_id"/><field name="concept_id"/><field name="active" optional="hide"/></list></field>
+    </record>
+    <record id="cq_rule_form" model="ir.ui.view">
+        <field name="name">cq.rule.form</field><field name="model">cq.rule</field>
+        <field name="arch" type="xml">
+            <form><sheet><group><group><field name="name"/><field name="company_id"/><field name="journal_id" domain="[('company_id', '=', company_id), ('type', '=', 'bank')]"/><field name="concept_id"/><field name="sequence"/><field name="active"/></group>
+                <group><field name="account_ids" widget="many2many_tags" domain="[('company_ids', 'in', [company_id])]"/><field name="partner_ids" widget="many2many_tags"/><field name="country_scope"/><field name="method_code"/><field name="label_contains"/><field name="fallback"/></group></group>
+                <p>Se deben cumplir todas las condiciones indicadas. Gana el menor número de prioridad. Un empate entre conceptos diferentes queda pendiente de revisión. Los países desconocidos no se consideran automáticamente extranjeros.</p>
+            </sheet></form>
+        </field>
+    </record>
+    <record id="action_cq_concepts" model="ir.actions.act_window"><field name="name">Conceptos</field><field name="res_model">cq.concept</field><field name="view_mode">list,form</field></record>
+    <record id="action_cq_rules" model="ir.actions.act_window"><field name="name">Reglas de clasificación</field><field name="res_model">cq.rule</field><field name="view_mode">list,form</field></record>
+</odoo>

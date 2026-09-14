@@ -1,0 +1,10 @@
+<odoo>
+    <menuitem id="menu_cq_root" name="Conciliación cuadrática" parent="account.menu_finance" sequence="65" groups="account.group_account_user"/>
+    <menuitem id="menu_cq_generate" name="Generar conciliación" parent="menu_cq_root" action="action_cq_generate" sequence="10"/>
+    <menuitem id="menu_cq_reports" name="Resultados y cierres" parent="menu_cq_root" action="action_cq_reports" sequence="20"/>
+    <menuitem id="menu_cq_movements" name="Clasificar movimientos" parent="menu_cq_root" action="action_cq_movements" sequence="30"/>
+    <menuitem id="menu_cq_statements" name="Cortes de extractos" parent="menu_cq_root" action="action_cq_statements" sequence="40"/>
+    <menuitem id="menu_cq_config" name="Configuración" parent="menu_cq_root" sequence="90" groups="account.group_account_manager"/>
+    <menuitem id="menu_cq_concepts" parent="menu_cq_config" action="action_cq_concepts" sequence="10"/>
+    <menuitem id="menu_cq_rules" parent="menu_cq_config" action="action_cq_rules" sequence="20"/>
+</odoo>

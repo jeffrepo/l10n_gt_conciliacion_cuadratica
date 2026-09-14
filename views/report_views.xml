@@ -1,0 +1,54 @@
+<odoo>
+    <record id="cq_report_list" model="ir.ui.view">
+        <field name="name">cq.report.list</field><field name="model">cq.report</field>
+        <field name="arch" type="xml"><list create="0" delete="0" decoration-warning="issue_count &gt; 0">
+            <field name="name"/><field name="company_id" groups="base.group_multi_company"/><field name="journal_id"/><field name="year"/><field name="month"/>
+            <field name="currency_id"/><field name="issue_count"/><field name="unclassified_count"/><field name="state"/><field name="generated_at"/>
+        </list></field>
+    </record>
+    <record id="cq_report_form" model="ir.ui.view">
+        <field name="name">cq.report.form</field><field name="model">cq.report</field>
+        <field name="arch" type="xml"><form create="0" edit="0" delete="0">
+            <header>
+                <button name="action_export" type="object" string="Exportar XLSX" class="oe_highlight"/>
+                <button name="action_movements" type="object" string="Revisar movimientos"/>
+                <button name="action_new_version" type="object" string="Generar nueva versión"/>
+                <button name="action_confirm" type="object" string="Conservar cierre" invisible="state == 'confirmed' or issue_count &gt; 0"/>
+                <field name="state" widget="statusbar"/>
+            </header>
+            <sheet>
+                <div class="alert alert-warning" invisible="issue_count == 0">Este resultado tiene datos pendientes de revisión. El XLSX identifica los pendientes y se exporta como borrador.</div>
+                <div class="oe_title"><h1><field name="name"/></h1></div>
+                <group><group><field name="company_id"/><field name="journal_id"/><field name="currency_id"/><field name="year"/><field name="month"/></group>
+                    <group><field name="generated_at"/><field name="generated_by"/><field name="issue_count"/><field name="unclassified_count"/><field name="confirmed_at" invisible="state != 'confirmed'"/><field name="confirmed_by" invisible="state != 'confirmed'"/></group></group>
+                <notebook>
+                    <page string="Resumen mensual"><field name="month_ids">
+                        <list create="0" edit="0" delete="0" decoration-warning="not bank_available or not control_available">
+                            <field name="name"/><field name="cutoff"/><field name="currency_id" column_invisible="True"/>
+                            <field name="bank_available"/><field name="control_available"/>
+                            <field name="bank_opening"/><field name="income"/><field name="expense"/><field name="bank_end"/>
+                            <field name="statement_end"/><field name="bank_difference"/><field name="deposits" optional="show"/>
+                            <field name="checks" optional="show"/><field name="payments" optional="show"/>
+                            <field name="bank_adjusted"/><field name="book_balance"/><field name="book_adjustment"/><field name="book_adjusted"/><field name="difference"/>
+                            <field name="ledger_bank" optional="hide"/><field name="ledger_outstanding" optional="hide"/><field name="ledger_suspense" optional="hide"/>
+                        </list>
+                    </field></page>
+                    <page string="Pendientes de revisión"><field name="issue_ids"><list create="0" edit="0" delete="0"><field name="month"/><field name="message"/><field name="statement_line_id"/><field name="code" optional="hide"/></list></field></page>
+                </notebook>
+                <p>Los importes de este resultado se conservan como fueron calculados. Las correcciones se hacen en los movimientos originales; luego se genera una nueva versión. Las partidas al cierre y el detalle completo se incluyen en el XLSX.</p>
+            </sheet>
+        </form></field>
+    </record>
+    <record id="cq_report_search" model="ir.ui.view">
+        <field name="name">cq.report.search</field><field name="model">cq.report</field>
+        <field name="arch" type="xml"><search><field name="name"/><field name="journal_id"/><field name="company_id"/>
+            <filter name="pending" string="Con pendientes" domain="[('issue_count', '&gt;', 0)]"/>
+            <filter name="confirmed" string="Cierres conservados" domain="[('state', '=', 'confirmed')]"/>
+            <group><filter name="group_bank" string="Cuenta bancaria" context="{'group_by': 'journal_id'}"/><filter name="group_company" string="Empresa" context="{'group_by': 'company_id'}"/></group>
+        </search></field>
+    </record>
+    <record id="action_cq_reports" model="ir.actions.act_window">
+        <field name="name">Conciliaciones cuadráticas</field><field name="res_model">cq.report</field><field name="view_mode">list,form</field>
+        <field name="help" type="html"><p>Utilice Generar conciliación para calcular un resultado por cuenta bancaria.</p></field>
+    </record>
+</odoo>
