@@ -55,9 +55,33 @@ jobs:
           --log-level=test --logfile=odoo-test.log
       - name: Verificar ejecución de pruebas de integración
         run: python custom/l10n_gt_conciliacion_cuadratica/tests_unit/check_integration_log.py odoo-test.log
+      - uses: actions/checkout@v4
+        with:
+          ref: '88d97c25a1c8ad1d5002a6ef5242a860806174ce'
+          path: legacy/l10n_gt_conciliacion_cuadratica
+      - name: Instalar versión anterior en base de actualización
+        run: >-
+          python odoo/odoo-bin --addons-path=odoo/addons,legacy
+          --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
+          --database=cq_upgrade --init=l10n_us,l10n_gt_conciliacion_cuadratica
+          --without-demo --stop-after-init --http-port=8071 --http-interface=127.0.0.1
+          --max-cron-threads=0 --logfile=odoo-legacy.log
+      - name: Actualizar módulo y probar agrupación por cuenta contable
+        run: >-
+          python odoo/odoo-bin --addons-path=odoo/addons,custom
+          --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
+          --database=cq_upgrade --update=l10n_gt_conciliacion_cuadratica
+          --without-demo --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica
+          --stop-after-init --http-port=8071 --http-interface=127.0.0.1 --max-cron-threads=0
+          --log-level=test --logfile=odoo-upgrade.log
+      - name: Verificar pruebas tras actualización
+        run: python custom/l10n_gt_conciliacion_cuadratica/tests_unit/check_integration_log.py odoo-upgrade.log
       - name: Publicar registro de pruebas
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: odoo-test-log
-          path: odoo-test.log
+          path: |
+            odoo-test.log
+            odoo-legacy.log
+            odoo-upgrade.log

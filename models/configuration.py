@@ -56,7 +56,14 @@ class QuadraticRule(models.Model):
 class AccountJournal(models.Model):
     _inherit = "account.journal"
 
-    cq_enabled = fields.Boolean("Incluir en conciliación cuadrática")
+    cq_enabled = fields.Boolean(
+        "Incluir en conciliación cuadrática",
+        help="Habilita la cuenta contable bancaria. Se incluyen todos los diarios bancarios de la compañía que usan esa cuenta, incluso los archivados.",
+    )
+    cq_statement_source = fields.Boolean(
+        "Usar extractos como control de la cuenta",
+        help="Marque el diario que contiene los estados de cuenta completos del banco. Sus saldos se usan una sola vez. Si solo un diario tiene movimientos bancarios, se elige automáticamente.",
+    )
     cq_account_type = fields.Selection(
         [("monetary", "Monetaria"), ("savings", "Ahorro"), ("other", "Otra")],
         default="monetary", string="Tipo de cuenta bancaria",
@@ -75,11 +82,17 @@ class AccountJournal(models.Model):
             | self.cq_extra_outstanding_account_ids
         ) - self.default_account_id - self.suspense_account_id
 
-    @api.constrains("cq_enabled", "type", "cq_extra_outstanding_account_ids", "company_id", "default_account_id", "suspense_account_id")
+    @api.constrains("cq_enabled", "cq_statement_source", "type", "cq_extra_outstanding_account_ids", "company_id", "default_account_id", "suspense_account_id")
     def _cq_check_configuration(self):
         for journal in self:
-            if journal.cq_enabled and journal.type != "bank":
+            if (journal.cq_enabled or journal.cq_statement_source) and journal.type != "bank":
                 raise ValidationError(_("Solo se pueden habilitar diarios bancarios."))
+            if journal.cq_statement_source and self.with_context(active_test=False).search_count([
+                ("company_id", "=", journal.company_id.id),
+                ("default_account_id", "=", journal.default_account_id.id),
+                ("cq_statement_source", "=", True), ("id", "!=", journal.id),
+            ]):
+                raise ValidationError(_("Seleccione un solo diario de control por compañía y cuenta contable bancaria."))
             for account in journal.cq_extra_outstanding_account_ids:
                 if journal.company_id not in account.company_ids:
                     raise ValidationError(_("Las cuentas pendientes deben pertenecer a la compañía del diario."))

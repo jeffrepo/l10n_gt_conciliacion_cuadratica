@@ -39,8 +39,12 @@ class QuadraticReport(models.Model):
 
     name = fields.Char("Referencia", required=True)
     company_id = fields.Many2one("res.company", required=True, index=True)
-    journal_id = fields.Many2one("account.journal", required=True, check_company=True, index=True)
-    currency_id = fields.Many2one("res.currency", required=True)
+    # Optional for snapshots created before grouping by ledger account. Their
+    # original payload, journal and exported bytes must remain untouched.
+    account_id = fields.Many2one("account.account", string="Cuenta contable bancaria", check_company=True, index=True)
+    journal_ids = fields.Many2many("account.journal", string="Diarios incluidos", check_company=True)
+    journal_id = fields.Many2one("account.journal", string="Diario de control / anterior", check_company=True, index=True)
+    currency_id = fields.Many2one("res.currency", string="Moneda", required=True)
     year = fields.Integer("Año", required=True)
     month = fields.Integer("Mes de corte", required=True)
     state = fields.Selection([("draft", "Borrador"), ("confirmed", "Cierre conservado")], default="draft", required=True)
@@ -90,7 +94,8 @@ class QuadraticReport(models.Model):
             "type": "ir.actions.act_window", "res_model": "cq.generate.wizard",
             "view_mode": "form", "target": "new", "name": _("Nueva versión"),
             "context": {"default_company_id": self.company_id.id, "default_year": self.year,
-                        "default_month": str(self.month), "default_journal_ids": [(6, 0, self.journal_id.ids)]},
+                        "default_month": str(self.month),
+                        "default_account_ids": [(6, 0, (self.account_id or self.journal_id.default_account_id).ids)]},
         }
 
     def action_movements(self):

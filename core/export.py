@@ -66,6 +66,9 @@ def _summary(sheet, snapshot, confirmed, fmt):
     state = "CIERRE CONSERVADO" if confirmed else "BORRADOR"
     sheet.merge_range("A7:O7", "%s · %s pendientes de revisión" % (state, len(snapshot["issues"])), fmt["warn"] if snapshot["issues"] else fmt["section"])
     sheet.merge_range("A8:O8", "Flujos: acumulados. Saldos: cierre del período. Saldo inicial anual: enero. n.d.: falta respaldo bancario.")
+    if "account_id" in meta:
+        sheet.merge_range("A9:O9", "Diarios incluidos: %s · Control de extractos: %s" % (meta["journal"], meta.get("control_journal") or "Pendiente de identificar"), fmt["label"])
+        sheet.set_row(8, 32)
     sheet.write_row(9, 0, ["Código", "Concepto", *MONTHS, "Acum. / saldo al corte"], fmt["head"])
     sheet.set_row(9, 32)
     sheet.freeze_panes(10, 2)
@@ -214,7 +217,7 @@ def _link(sheet, row, col, snapshot, model, source_id, label="Abrir en Odoo"):
 
 
 def _movements(sheet, snapshot, fmt):
-    headers = ["Fecha banco", "Fechas documentos vinculados", "Documento Odoo", "Referencia", "Contraparte", "Concepto / descripción", "Medio de pago", "Código", "Clasificación", "Ingreso", "Egreso", "Saldo bancario", "Importe contable", "Moneda contable", "Documentos vinculados", "Banco contraparte", "Cuenta contraparte", "Observación", "Origen clasificación", "Odoo"]
+    headers = ["Fecha banco", "Fechas documentos vinculados", "Documento Odoo", "Referencia", "Contraparte", "Concepto / descripción", "Medio de pago", "Código", "Clasificación", "Ingreso", "Egreso", "Saldo bancario", "Importe contable", "Moneda contable", "Documentos vinculados", "Banco contraparte", "Cuenta contraparte", "Observación", "Origen clasificación", "Odoo", "Diario de origen"]
     sheet.write_row(0, 0, headers, fmt["head"])
     sheet.set_row(0, 34)
     sheet.set_column(0, 1, 18)
@@ -224,6 +227,7 @@ def _movements(sheet, snapshot, fmt):
     sheet.set_column(9, 13, 18)
     sheet.set_column(14, 18, 35)
     sheet.set_column(19, 19, 18)
+    sheet.set_column(20, 20, 35)
     sheet.freeze_panes(1, 0)
     sheet.repeat_rows(0)
     concepts = {item["code"]: item["name"] for item in snapshot["concepts"]}
@@ -245,7 +249,7 @@ def _movements(sheet, snapshot, fmt):
                 7: report_codes.get(code, ""), 8: concepts.get(code, "Pendiente de clasificar"),
                 13: snapshot["metadata"]["company_currency"], 14: movement["linked_documents"],
                 15: movement["counterparty_bank"], 16: movement["counterparty_account"],
-                17: allocation.get("note") or movement["note"], 18: origin,
+                17: allocation.get("note") or movement["note"], 18: origin, 20: movement.get("journal", ""),
             }
             for col, value in values.items():
                 if value:
@@ -263,7 +267,7 @@ def _movements(sheet, snapshot, fmt):
 
 
 def _pending(sheet, snapshot, fmt):
-    headers = ["Corte", "Fecha contable", "Partida", "Documento", "Contraparte", "Descripción", "Cuenta contable", "Medio de pago", "Pendiente moneda banco", "Moneda banco", "Pendiente moneda compañía", "Moneda compañía", "Odoo"]
+    headers = ["Corte", "Fecha contable", "Partida", "Documento", "Contraparte", "Descripción", "Cuenta contable", "Medio de pago", "Pendiente moneda banco", "Moneda banco", "Pendiente moneda compañía", "Moneda compañía", "Odoo", "Diario de origen"]
     labels = {"deposit": "Depósito en tránsito", "check": "Cheque en circulación", "payment": "Otro pago pendiente", "suspense": "Movimiento en transitoria"}
     sheet.write_row(0, 0, headers, fmt["head"])
     sheet.set_row(0, 36)
@@ -272,6 +276,7 @@ def _pending(sheet, snapshot, fmt):
     sheet.set_column(5, 6, 50)
     sheet.set_column(7, 11, 24)
     sheet.set_column(12, 12, 18)
+    sheet.set_column(13, 13, 35)
     sheet.freeze_panes(1, 0)
     sheet.repeat_rows(0)
     for row, item in enumerate(snapshot["pending"], 1):
@@ -282,4 +287,6 @@ def _pending(sheet, snapshot, fmt):
         sheet.write_number(row, 8, item["amount"], fmt["money"])
         sheet.write_number(row, 10, item["company_amount"], fmt["money"])
         _link(sheet, row, 12, snapshot, "account.move", item["move_id"])
+        if item.get("journal"):
+            sheet.write_string(row, 13, item["journal"], fmt["text"])
     sheet.autofilter(0, 0, max(len(snapshot["pending"]), 1), len(headers) - 1)

@@ -1,7 +1,7 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.0.0`.
-Genera un XLSX por compañía y cuenta bancaria, con resumen de enero al mes de
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.1.0`.
+Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de la biblioteca Python `xlsxwriter`; funciona sobre los modelos
 contables comunes a Community y Enterprise. No depende de GDOMEX ni de `account_gt`.
@@ -23,8 +23,21 @@ odoo-bin -d base_pruebas -i l10n_gt_conciliacion_cuadratica --stop-after-init
 
 ## Configuración inicial
 
-- En cada diario bancario, pestaña **Conciliación cuadrática**, activar su
-  inclusión. Revisar la cuenta bancaria vinculada, moneda y tipo de cuenta.
+- En al menos un diario de cada cuenta contable bancaria, pestaña
+  **Conciliación cuadrática**, activar su inclusión. Se reúnen automáticamente
+  todos los diarios bancarios de esa compañía cuya **Cuenta bancaria contable**
+  (`default_account_id`) sea la misma, incluso diarios no habilitados o archivados.
+  Por ejemplo, Cheques, Depósitos y Transferencias de BAC Q generan un solo XLSX
+  si usan la misma cuenta contable; una cuenta BAC USD diferente genera otro.
+  El nombre del diario, el banco BAC o la moneda no son criterios de agrupación.
+- Revisar la cuenta bancaria física vinculada, moneda y tipo de cuenta.
+  Todos los diarios de una cuenta contable deben tener la misma moneda efectiva.
+  La compañía forma parte de la agrupación, aunque comparta el plan de cuentas.
+- Si varios diarios del grupo contienen movimientos bancarios, marcar
+  **Usar extractos como control de la cuenta** en un solo diario, el que contiene
+  el estado de cuenta completo del banco. Si únicamente uno tiene movimientos,
+  se selecciona automáticamente. Se usa su saldo inicial y su control mensual
+  una sola vez; nunca se suman los saldos de los extractos de varios diarios.
 - Mantener configuradas las cuentas de cobros y pagos pendientes de los métodos
   de pago. El módulo las obtiene automáticamente. Las cuentas pendientes
   adicionales se configuran explícitamente en el diario.
@@ -57,7 +70,9 @@ al formato de la empresa sin cambiar la identificación interna de los conceptos
 1. Cargar los movimientos y estados de cuenta en el flujo bancario habitual de
    Odoo y realizar la conciliación. No se suben archivos al asistente de este módulo.
 2. Abrir **Generar conciliación**, seleccionar empresa, año, mes de corte y una
-   o varias cuentas habilitadas (o todas).
+   o varias cuentas contables bancarias habilitadas (o todas). El resultado muestra
+   la cuenta contable y los diarios incluidos. La configuración de diarios decide
+   qué cuentas están disponibles, pero no permite omitir parte de una misma cuenta.
 3. Pulsar **Calcular** y revisar los resultados. Los faltantes, diferencias y
    distribuciones incompletas se muestran como pendientes.
 4. Corregir la clasificación en **Clasificar movimientos**. Un movimiento puede
@@ -78,7 +93,7 @@ conservado, no consultando otra vez los movimientos.
 
 ## Criterio de cálculo
 
-Los importes se expresan en la moneda del diario (o de la compañía cuando el
+Los importes se expresan en la moneda común de los diarios (o de la compañía cuando un
 diario no define otra). Los saldos de bancos y los de libros se obtienen de
 fuentes separadas:
 
@@ -97,6 +112,19 @@ fuentes separadas:
   transitoria. Cada ajuste tiene su apunte en Partidas conciliatorias; no se
   inventa una contrapartida para hacer coincidir los saldos.
 - **Diferencia:** banco ajustado menos libros ajustados.
+
+El mayor de la cuenta bancaria incluye sus apuntes publicados en **cualquier
+diario**, incluidos los asientos de apertura y ajustes de diarios generales.
+Las cuentas pendientes y transitorias se consultan una sola vez y se atribuyen
+a la cuenta bancaria de origen. Compartirlas entre los diarios de la misma cuenta
+no genera la observación de banco ambiguo. Otras cuentas bancarias conservan sus
+propias partidas. Las reglas específicas de diario siguen aplicándose únicamente
+a movimientos de ese diario. El XLSX conserva el diario de origen en el detalle.
+
+Los movimientos bancarios se obtienen de las transacciones importadas en Odoo;
+los pagos y sus conciliaciones alimentan las partidas pendientes y los libros.
+No se deduplican transacciones diferentes solo porque tengan el mismo importe,
+fecha o referencia. Un extracto importado dos veces debe corregirse en Odoo.
 
 Los residuales se reconstruyen con los importes conciliados cuya `max_date`
 (máxima fecha contable de los dos apuntes) no supera el corte. Así, un cheque
@@ -121,6 +149,11 @@ Los importes faltantes se muestran como `n.d.` en el XLSX, no como un cero valid
 - El flujo de cuentas pendientes separadas está soportado. Los métodos de pago
   que usan directamente la cuenta bancaria generan un pendiente de configuración:
   no se presenta su conciliación como un cierre validado en esta versión.
+- Una cuenta contable vinculada a varias cuentas bancarias físicas genera una
+  observación; no se declara un cierre válido mezclando esas identidades.
+- Si varios diarios contienen movimientos y no se define el diario de control,
+  se conservan sus ingresos y egresos, pero los saldos bancarios sin respaldo se
+  muestran como no disponibles y no se permite conservar el cierre.
 - Las cuentas transitorias compartidas se atribuyen mediante el banco del
   movimiento, pago, diario o relación de conciliación. Los apuntes sin atribución
   inequívoca quedan señalados y no se asignan silenciosamente a una empresa/banco.
@@ -155,3 +188,19 @@ odoo-bin -d cq_test -i l10n_us,l10n_gt_conciliacion_cuadratica \
 `l10n_us` se usa solo para los fixtures contables de las pruebas comunes de Odoo;
 no es una dependencia del módulo. GitHub Actions instala el módulo en Odoo 19
 con PostgreSQL 16 y ejecuta las pruebas de integración y de exportación.
+
+## Actualización desde 19.0.1.0.0
+
+Actualizar el código, reiniciar Odoo y **actualizar el módulo instalado**:
+
+```bash
+odoo-bin -d base_pruebas -u l10n_gt_conciliacion_cuadratica --stop-after-init
+```
+
+Las marcas existentes de inclusión en los diarios siguen siendo válidas.
+Los resultados anteriores conservan su cálculo por diario y sus archivos; no se
+fusionan ni recalculan automáticamente. Se identifican como resultados anteriores
+en el formulario. Usar **Generar nueva versión** para obtener el resultado por
+cuenta contable. Si varios diarios contienen extractos, configurar antes el diario
+de control. Las pruebas de CI también actualizan una instalación de la versión
+anterior para verificar los cambios de modelos y vistas.

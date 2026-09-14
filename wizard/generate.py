@@ -18,16 +18,24 @@ class QuadraticGenerateWizard(models.TransientModel):
     year = fields.Integer("Año", required=True, default=lambda self: (fields.Date.context_today(self).replace(day=1) - timedelta(days=1)).year)
     month = fields.Selection([(str(index + 1), name) for index, name in enumerate(MONTHS)], required=True,
                              default=lambda self: str((fields.Date.context_today(self).replace(day=1) - timedelta(days=1)).month), string="Mes de corte")
-    all_journals = fields.Boolean("Todas las cuentas habilitadas")
-    journal_ids = fields.Many2many("account.journal", string="Cuentas bancarias", check_company=True)
+    all_accounts = fields.Boolean("Todas las cuentas habilitadas")
+    available_account_ids = fields.Many2many("account.account", compute="_compute_available_accounts")
+    account_ids = fields.Many2many("account.account", "cq_wizard_account_rel", string="Cuentas contables bancarias", check_company=True)
     state = fields.Selection([("select", "Selección"), ("result", "Resultados")], default="select")
     report_ids = fields.Many2many("cq.report", string="Resultados", readonly=True)
     file_data = fields.Binary("Archivo", readonly=True)
     file_name = fields.Char("Nombre de archivo", readonly=True)
 
+    @api.depends("company_id")
+    def _compute_available_accounts(self):
+        for wizard in self:
+            wizard.available_account_ids = self.env["account.journal"].with_context(active_test=False).search([
+                ("company_id", "=", wizard.company_id.id), ("type", "=", "bank"), ("cq_enabled", "=", True),
+            ]).default_account_id
+
     @api.onchange("company_id")
     def _onchange_company(self):
-        self.journal_ids = False
+        self.account_ids = False
         self.report_ids = False
         self.state = "select"
 
@@ -43,16 +51,12 @@ class QuadraticGenerateWizard(models.TransientModel):
             raise AccessError(_("Se requiere acceso de Contabilidad para generar este reporte."))
         if self.company_id.id not in self.env.companies.ids:
             raise AccessError(_("La empresa seleccionada no está permitida en la sesión."))
-        journals = self.journal_ids
-        if self.all_journals:
-            journals = self.env["account.journal"].search([
-                ("company_id", "=", self.company_id.id), ("type", "=", "bank"), ("cq_enabled", "=", True),
-            ])
-        if not journals:
-            raise UserError(_("Seleccione cuentas bancarias o habilítelas en la configuración de diarios."))
+        accounts = self.available_account_ids if self.all_accounts else self.account_ids
+        if not accounts:
+            raise UserError(_("Seleccione cuentas contables bancarias o habilítelas en la configuración de diarios."))
         reports = self.env["cq.report"]
-        for journal in journals:
-            reports |= self.env["cq.report"]._generate(self.company_id, journal, self.year, int(self.month))
+        for account in accounts:
+            reports |= self.env["cq.report"]._generate(self.company_id, account, self.year, int(self.month))
         self.write({"report_ids": [(6, 0, reports.ids)], "state": "result", "file_data": False})
         return {"type": "ir.actions.act_window", "name": _("Conciliación cuadrática"),
                 "res_model": self._name, "res_id": self.id, "view_mode": "form", "target": "new"}

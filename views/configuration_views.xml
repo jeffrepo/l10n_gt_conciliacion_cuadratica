@@ -7,10 +7,12 @@
                 <page string="Conciliación cuadrática" invisible="type != 'bank'" groups="account.group_account_user">
                     <group>
                         <field name="cq_enabled"/>
-                        <field name="cq_account_type" invisible="not cq_enabled"/>
-                        <field name="cq_extra_outstanding_account_ids" widget="many2many_tags" invisible="not cq_enabled" domain="[('company_ids', 'in', [company_id]), ('reconcile', '=', True)]"/>
+                        <field name="cq_statement_source"/>
+                        <field name="cq_account_type"/>
+                        <field name="cq_extra_outstanding_account_ids" widget="many2many_tags" domain="[('company_ids', 'in', [company_id]), ('reconcile', '=', True)]"/>
                     </group>
-                    <p>Se utilizan las cuentas de cobros y pagos pendientes de los métodos de pago del diario. Los extractos deben conservar sus saldos bancarios y su fecha de corte.</p>
+                    <p>Habilitar un diario permite seleccionar su cuenta contable bancaria. El XLSX reúne todos los diarios bancarios de la compañía con esa misma cuenta, incluidos los archivados. Si varios diarios contienen movimientos bancarios, seleccione un único diario cuyos extractos completos controlan el saldo de la cuenta.</p>
+                    <p>Se utilizan las cuentas de cobros y pagos pendientes de los métodos de pago de todos los diarios incluidos. Los extractos deben conservar sus saldos bancarios y su fecha de corte.</p>
                 </page>
             </xpath>
         </field>

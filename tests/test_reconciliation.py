@@ -31,9 +31,10 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         cls.in_concept = cls.env.ref("l10n_gt_conciliacion_cuadratica.concept_in_customers_local")
         cls.out_concept = cls.env.ref("l10n_gt_conciliacion_cuadratica.concept_out_suppliers")
 
-    def _statement(self, when, amount, balance_start, balance_end, cutoff, classified=True):
+    def _statement(self, when, amount, balance_start, balance_end, cutoff, classified=True, journal=None):
+        journal = journal or self.bank
         line = self.env["account.bank.statement.line"].create({
-            "journal_id": self.bank.id, "date": when, "payment_ref": "CQ transaction",
+            "journal_id": journal.id, "date": when, "payment_ref": "CQ transaction",
             "amount": amount, "partner_id": self.partner_a.id,
             "cq_concept_id": (self.in_concept if amount >= 0 else self.out_concept).id if classified else False,
         })
@@ -46,7 +47,18 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         return statement, line
 
     def _report(self, month=1):
-        return self.env["cq.report"]._generate(self.company, self.bank, 2024, month)
+        return self.env["cq.report"]._generate(self.company, self.bank.default_account_id, 2024, month)
+
+    def _related_journal(self, code, **values):
+        journal = self.env["account.journal"].create({
+            "name": "CQ %s" % code, "code": code, "type": "bank", "company_id": self.company.id,
+            "default_account_id": self.bank.default_account_id.id,
+            "suspense_account_id": self.bank.suspense_account_id.id,
+            **values,
+        })
+        journal.inbound_payment_method_line_ids.payment_account_id = self.incoming
+        journal.outbound_payment_method_line_ids.payment_account_id = self.outgoing
+        return journal
 
     def test_real_statement_report_export_and_immutable_close(self):
         self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
@@ -159,15 +171,15 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
             "journal_id": other.id, "date": "2024-01-20", "payment_ref": "Original bank", "amount": 25,
         })
         line = source.move_id.line_ids[:1]
-        owner = self.env["cq.report"]._line_owner(line, {self.bank.id}, {})
-        self.assertEqual(owner, other.id)
+        owner = self.env["cq.report"]._line_owner(line, {self.bank.default_account_id.id}, {})
+        self.assertEqual(owner, other.default_account_id.id)
 
     def test_wizard_view_and_company_boundary(self):
         with Form(self.env["cq.generate.wizard"]) as form:
             form.company_id = self.company
             form.year = 2024
             form.month = "1"
-            form.journal_ids.add(self.bank)
+            form.account_ids.add(self.bank.default_account_id)
         wizard = form.save()
         self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
         wizard.action_calculate()
@@ -175,7 +187,138 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertEqual(wizard.state, "result")
         other_company = self.env["res.company"].create({"name": "CQ isolated company"})
         with self.assertRaises(AccessError):
-            self.env["cq.report"].with_context(allowed_company_ids=self.company.ids)._generate(other_company, self.bank, 2024, 1)
+            self.env["cq.report"].with_context(allowed_company_ids=self.company.ids)._generate(other_company, self.bank.default_account_id, 2024, 1)
+
+    def test_three_journals_one_account_and_one_opening_balance(self):
+        checks = self._related_journal("CQCH")
+        transfers = self._related_journal("CQTR", cq_statement_source=True)
+        self._statement("2024-01-10", 100, 0, 100, "2024-01-10")
+        self._statement("2024-01-20", -20, 100, 80, "2024-01-20", journal=checks)
+        self._statement("2024-01-25", -30, 80, 50, "2024-01-31", journal=transfers)
+        # Archived / non-enabled journals remain part of the account's history.
+        checks.active = False
+        wizard = self.env["cq.generate.wizard"].create({
+            "company_id": self.company.id, "year": 2024, "month": "1", "all_accounts": True,
+        })
+        wizard.action_calculate()
+        self.assertEqual(len(wizard.report_ids), 1)
+        report = wizard.report_ids
+        self.assertEqual(report.account_id, self.bank.default_account_id)
+        self.assertEqual(set(report.journal_ids.ids), set((self.bank | checks | transfers).ids))
+        self.assertEqual(report.journal_id, transfers)
+        self.assertEqual(report.month_ids.bank_opening, 0)
+        self.assertEqual(report.month_ids.income, 100)
+        self.assertEqual(report.month_ids.expense, 50)
+        self.assertEqual(report.month_ids.bank_end, 50)
+        self.assertEqual(report.month_ids.ledger_bank, 50)
+        self.assertEqual(report.month_ids.ledger_suspense, -50)
+        self.assertEqual(len(report.payload["movements"]), 3)
+        self.assertEqual(report.issue_count, 0, report.payload["issues"])
+        from io import BytesIO
+        from openpyxl import load_workbook
+        workbook = load_workbook(BytesIO(report._xlsx_bytes()), data_only=True)
+        self.assertEqual(workbook["Movimientos"].max_row, 4)
+        self.assertEqual(workbook["Movimientos"]["U4"].value, transfers.display_name)
+        self.assertIn(transfers.display_name, workbook["Conciliación"]["A9"].value)
+
+    def test_payments_from_related_journals_and_other_bank_stay_separate(self):
+        checks = self._related_journal("CQCH")
+        transfers = self._related_journal("CQTR")
+        self._statement("2024-01-10", 100, 0, 100, "2024-01-31")
+        for journal, amount in [(checks, 20), (transfers, 30)]:
+            payment = self.env["account.payment"].create({
+                "journal_id": journal.id, "date": "2024-01-20", "amount": amount,
+                "payment_type": "outbound", "partner_type": "supplier", "partner_id": self.partner_a.id,
+                "payment_method_line_id": journal.outbound_payment_method_line_ids[0].id,
+            })
+            payment.action_post()
+        other = self.env["account.journal"].create({
+            "name": "Another ledger bank", "code": "CQB2", "type": "bank", "company_id": self.company.id,
+            "cq_enabled": True, "suspense_account_id": self.bank.suspense_account_id.id,
+        })
+        other.outbound_payment_method_line_ids.payment_account_id = self.outgoing
+        payment = self.env["account.payment"].create({
+            "journal_id": other.id, "date": "2024-01-20", "amount": 900,
+            "payment_type": "outbound", "partner_type": "supplier", "partner_id": self.partner_a.id,
+            "payment_method_line_id": other.outbound_payment_method_line_ids[0].id,
+        })
+        payment.action_post()
+        wizard = self.env["cq.generate.wizard"].create({
+            "company_id": self.company.id, "year": 2024, "month": "1", "all_accounts": True,
+        })
+        wizard.action_calculate()
+        self.assertEqual(len(wizard.report_ids), 2)
+        report = wizard.report_ids.filtered(lambda item: item.account_id == self.bank.default_account_id)
+        self.assertEqual(report.month_ids.payments, 50)
+        self.assertEqual(report.month_ids.ledger_outstanding, -50)
+        self.assertEqual(report.month_ids.bank_adjusted, 50)
+        self.assertEqual(report.issue_count, 0, report.payload["issues"])
+        other_report = wizard.report_ids - report
+        self.assertEqual(other_report.month_ids.payments, 900)
+
+    def test_multiple_statement_sources_require_explicit_control(self):
+        other = self._related_journal("CQTR")
+        self._statement("2024-01-10", 100, 0, 100, "2024-01-10")
+        self._statement("2024-01-25", -30, 100, 70, "2024-01-31", journal=other)
+        report = self._report()
+        self.assertIn("statement_source", report.issue_ids.mapped("code"))
+        self.assertIsNone(report.payload["months"][0]["bank_opening"])
+        self.assertFalse(report.month_ids.control_available)
+        self.assertEqual(report.month_ids.expense, 30)
+        other.cq_statement_source = True
+        self.assertEqual(self._report().issue_count, 0)
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            self.bank.cq_statement_source = True
+
+    def test_rules_remain_scoped_to_source_journal(self):
+        other = self._related_journal("CQTR", cq_statement_source=True)
+        _, receipt = self._statement("2024-01-10", 100, 0, 100, "2024-01-10", classified=False)
+        _, transfer = self._statement("2024-01-25", 30, 100, 130, "2024-01-31", classified=False, journal=other)
+        other_concept = self.env.ref("l10n_gt_conciliacion_cuadratica.concept_in_interest")
+        for journal, concept in [(self.bank, self.in_concept), (other, other_concept)]:
+            self.env["cq.rule"].create({
+                "name": journal.name, "company_id": self.company.id, "journal_id": journal.id,
+                "concept_id": concept.id, "fallback": True,
+            })
+        report = self._report()
+        self.assertEqual(report.issue_count, 0, report.payload["issues"])
+        codes = {row["source_id"]: row["allocations"][0]["code"] for row in report.payload["movements"]}
+        self.assertEqual(codes[receipt.id], self.in_concept.code)
+        self.assertEqual(codes[transfer.id], other_concept.code)
+
+    def test_bank_ledger_includes_general_journal_entries(self):
+        self._statement("2024-01-10", 100, 0, 100, "2024-01-31")
+        move = self.env["account.move"].create({
+            "journal_id": self.company_data["default_journal_misc"].id, "date": "2024-01-20",
+            "line_ids": [
+                Command.create({"account_id": self.bank.default_account_id.id, "debit": 10}),
+                Command.create({"account_id": self.company_data["default_account_revenue"].id, "credit": 10}),
+            ],
+        })
+        move.action_post()
+        report = self._report()
+        self.assertEqual(report.month_ids.ledger_bank, 110)
+        self.assertEqual(report.month_ids.difference, -10)
+        self.assertIn("book_difference", report.issue_ids.mapped("code"))
+
+    def test_group_rejects_mixed_currencies(self):
+        foreign = self.setup_other_currency("EUR", rates=[("1900-01-01", 0.5)])
+        self._related_journal("CQFX", currency_id=foreign.id)
+        with self.assertRaises(UserError):
+            self._report()
+
+    def test_old_journal_snapshot_stays_readable(self):
+        from ..models.report import INTERNAL
+        self._statement("2024-01-10", 100, 0, 100, "2024-01-31")
+        old = self._report()
+        old.action_export()
+        saved = old._xlsx_bytes()
+        # Existing v1.0 records have only journal_id; update must not require
+        # account_id, rewrite their payload, or regenerate their exported file.
+        old.with_context(cq_internal=INTERNAL).write({"account_id": False, "journal_ids": [Command.clear()]})
+        self.assertEqual(old._xlsx_bytes(), saved)
+        action = old.action_new_version()
+        self.assertEqual(action["context"]["default_account_ids"], [(6, 0, self.bank.default_account_id.ids)])
 
     def test_non_bank_and_wrong_allocation_are_rejected(self):
         with self.assertRaises(ValidationError), self.cr.savepoint():
