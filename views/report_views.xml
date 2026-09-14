@@ -17,7 +17,7 @@
                 <field name="state" widget="statusbar"/>
             </header>
             <sheet>
-                <div class="alert alert-warning" invisible="issue_count == 0">Este resultado tiene datos pendientes de revisión. El XLSX identifica los pendientes y se exporta como borrador.</div>
+                <div class="alert alert-warning" role="status" invisible="issue_count == 0">Este resultado tiene datos pendientes de revisión. El XLSX identifica los pendientes y se exporta como borrador.</div>
                 <div class="oe_title"><h1><field name="name"/></h1></div>
                 <group><group><field name="company_id"/><field name="journal_id"/><field name="currency_id"/><field name="year"/><field name="month"/></group>
                     <group><field name="generated_at"/><field name="generated_by"/><field name="issue_count"/><field name="unclassified_count"/><field name="confirmed_at" invisible="state != 'confirmed'"/><field name="confirmed_by" invisible="state != 'confirmed'"/></group></group>

@@ -209,7 +209,7 @@ class QuadraticExtraction(models.Model):
                 "base_url": self.env["ir.config_parameter"].sudo().get_param("web.base.url", ""),
             },
             "bank_opening": opening, "controls": controls, "ledger": ledger,
-            "concepts": [{"code": item.code, "name": item.name, "direction": item.direction,
+            "concepts": [{"code": item.code, "report_code": item.report_code or "", "name": item.name, "direction": item.direction,
                           "sequence": item.sequence, "detail": item.detail} for item in concepts],
             "movements": movements, "issues": issues,
         }
@@ -220,8 +220,6 @@ class QuadraticExtraction(models.Model):
         Unlinked exchange/manual entries may inherit an unambiguous owner
         from their reconciliation component. Never allocate by partner alone.
         """
-        if len(account_owners) == 1:
-            return next(iter(account_owners))
         if line.id in cache:
             return cache[line.id]
 
@@ -238,6 +236,8 @@ class QuadraticExtraction(models.Model):
         if owner:
             cache[line.id] = owner
             return owner
+        if len(account_owners) == 1:
+            return next(iter(account_owners))
         visited, found = set(), set()
         queue = line
         while queue:

@@ -9,6 +9,7 @@ class QuadraticConcept(models.Model):
 
     name = fields.Char("Concepto", required=True, translate=True)
     code = fields.Char("Código", required=True, index=True)
+    report_code = fields.Char("Código en Excel", size=12, help="Código breve de presentación. El código interno identifica el concepto de forma estable.")
     sequence = fields.Integer("Orden", default=10)
     active = fields.Boolean(default=True)
     direction = fields.Selection([("in", "Ingreso"), ("out", "Egreso")], required=True)

@@ -20,7 +20,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U odoo"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -50,9 +50,11 @@ jobs:
           --addons-path=odoo/addons,custom
           --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
           --database=cq_test --init=l10n_us,l10n_gt_conciliacion_cuadratica
-          --without-demo=all --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica
-          --stop-after-init --http-port=8071 --max-cron-threads=0
+          --without-demo --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica
+          --stop-after-init --http-port=8071 --http-interface=127.0.0.1 --max-cron-threads=0
           --log-level=test --logfile=odoo-test.log
+      - name: Verificar ejecución de pruebas de integración
+        run: python custom/l10n_gt_conciliacion_cuadratica/tests_unit/check_integration_log.py odoo-test.log
       - name: Publicar registro de pruebas
         if: always()
         uses: actions/upload-artifact@v4

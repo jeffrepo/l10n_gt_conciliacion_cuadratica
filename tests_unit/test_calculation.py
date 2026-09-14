@@ -37,9 +37,9 @@ def fixture():
                      "company_currency": "GTQ", "generated_at": "2024-02-01 12:00:00",
                      "generated_by": "Pruebas", "base_url": "https://odoo.example.test"},
         "concepts": [
-            {"code": "IN_CUSTOMERS_LOCAL", "name": "Clientes locales", "direction": "in", "sequence": 10, "detail": "none"},
-            {"code": "OUT_SUPPLIERS", "name": "Proveedores", "direction": "out", "sequence": 20, "detail": "none"},
-            {"code": "OUT_FEES", "name": "Comisiones", "direction": "out", "sequence": 30, "detail": "none"},
+            {"code": "IN_CUSTOMERS_LOCAL", "report_code": "I01", "name": "Clientes locales", "direction": "in", "sequence": 10, "detail": "none"},
+            {"code": "OUT_SUPPLIERS", "report_code": "E01", "name": "Proveedores", "direction": "out", "sequence": 20, "detail": "none"},
+            {"code": "OUT_FEES", "report_code": "E02", "name": "Comisiones", "direction": "out", "sequence": 30, "detail": "none"},
         ],
         "movements": [movement(1, "2024-01-05", 400), movement(2, "2024-01-20", -205, "OUT_SUPPLIERS")],
         "ledger": [ledger(10, "2023-12-31", 1000), ledger(11, "2024-01-05", 400), ledger(12, "2024-01-20", -205)],

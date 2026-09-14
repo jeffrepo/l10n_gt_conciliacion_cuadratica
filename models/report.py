@@ -73,6 +73,8 @@ class QuadraticReport(models.Model):
     def _xlsx_bytes(self):
         self.ensure_one()
         self.check_access("read")
+        if self.file_data:
+            return base64.b64decode(self.file_data)
         return export_xlsx(self.payload, confirmed=self.state == "confirmed")
 
     def action_export(self):
@@ -108,7 +110,7 @@ class QuadraticMonth(models.Model):
     report_id = fields.Many2one("cq.report", required=True, ondelete="cascade", index=True)
     company_id = fields.Many2one(related="report_id.company_id", store=True)
     currency_id = fields.Many2one(related="report_id.currency_id")
-    number = fields.Integer("Mes")
+    number = fields.Integer("Número de mes")
     name = fields.Char("Mes")
     cutoff = fields.Date("Fecha de corte")
     bank_available = fields.Boolean("Saldo inicial respaldado")

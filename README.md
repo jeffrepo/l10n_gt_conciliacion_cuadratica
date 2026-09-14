@@ -49,6 +49,8 @@ El catálogo inicial distingue ingresos, egresos y su finalidad. Incluye
 Configurar su prioridad frente a **Proveedores** y **Gastos operativos** según
 el criterio acordado; cada importe se incluye una sola vez. El medio de pago
 permanece disponible en el detalle aunque no sea el concepto principal.
+El campo **Código en Excel** permite adaptar los códigos breves de presentación
+al formato de la empresa sin cambiar la identificación interna de los conceptos.
 
 ## Operación mensual
 

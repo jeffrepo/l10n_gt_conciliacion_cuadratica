@@ -25,11 +25,12 @@ def export_xlsx(snapshot, confirmed=False):
         "title": book.add_format({"bold": True, "font_size": 14}),
         "head": book.add_format({"bold": True, "bg_color": "#183A50", "font_color": "#FFFFFF", "text_wrap": True}),
         "section": book.add_format({"bold": True, "bg_color": "#E8EEF2"}),
-        "total": book.add_format({"bold": True, "top": 1, "num_format": '#,##0.00;[Red](#,##0.00);"-"'}),
-        "money": book.add_format({"num_format": '#,##0.00;[Red](#,##0.00);"-"'}),
+        "total": book.add_format({"bold": True, "top": 1, "text_wrap": True, "valign": "vcenter", "num_format": '#,##0.00;[Red](#,##0.00);"-"'}),
+        "money": book.add_format({"num_format": '#,##0.00;[Red](#,##0.00);"-"', "valign": "vcenter"}),
         "date": book.add_format({"num_format": "dd/mm/yyyy"}),
         "text": book.add_format({"num_format": "@"}),
-        "detail": book.add_format({"indent": 1, "font_color": "#555555"}),
+        "label": book.add_format({"text_wrap": True, "valign": "vcenter"}),
+        "detail": book.add_format({"indent": 1, "font_color": "#555555", "text_wrap": True}),
         "warn": book.add_format({"bg_color": "#FFF2CC", "text_wrap": True}),
         "error": book.add_format({"bg_color": "#FCE4D6"}),
     }
@@ -41,8 +42,10 @@ def export_xlsx(snapshot, confirmed=False):
         sheet.set_default_row(18)
         sheet.set_landscape()
         sheet.set_paper(8)
-        sheet.fit_to_pages(1, 0)
         sheet.set_footer("&CPágina &P de &N")
+    main.fit_to_pages(1, 0)
+    details.repeat_columns(0, 2)
+    pending.repeat_columns(0, 3)
     _summary(main, snapshot, confirmed, fmt)
     _movements(details, snapshot, fmt)
     _pending(pending, snapshot, fmt)
@@ -73,7 +76,8 @@ def _summary(sheet, snapshot, confirmed, fmt):
     def metric(key, label, annual="last", formula=None, total=False):
         nonlocal row
         rows[key] = row
-        sheet.write_string(row, 1, label, fmt["total"] if total else None)
+        sheet.write_string(row, 1, label, fmt["total"] if total else fmt["label"])
+        sheet.set_row(row, 18 * max(1, (len(label) + 57) // 58))
         for idx, result in enumerate(months):
             col = idx + 2
             value = result[key]
@@ -112,8 +116,10 @@ def _summary(sheet, snapshot, confirmed, fmt):
         for concept in concepts:
             parent = row
             parent_rows.append(parent)
-            sheet.write_string(parent, 0, concept["code"], fmt["text"])
-            sheet.write_string(parent, 1, concept["name"])
+            if concept.get("report_code"):
+                sheet.write_string(parent, 0, concept["report_code"], fmt["text"])
+            sheet.write_string(parent, 1, concept["name"], fmt["label"])
+            sheet.set_row(parent, 18 * max(1, (len(concept["name"]) + 57) // 58))
             for idx, result in enumerate(months):
                 value = result["concept_totals"].get(concept["code"], 0)
                 sheet.write_number(parent, idx + 2, value, fmt["money"])
@@ -141,6 +147,7 @@ def _summary(sheet, snapshot, confirmed, fmt):
                     grouped = grouped[:10] + [("Otros socios", other)]
                 for label, totals in grouped:
                     sheet.write_string(row, 1, label, fmt["detail"])
+                    sheet.set_row(row, 18 * max(1, (len(label) + 55) // 56))
                     for idx in range(len(months)):
                         sheet.write_number(row, idx + 2, totals.get(idx + 1, 0), fmt["money"])
                     sheet.write_formula(row, 14, "=SUM(%s:%s)" % (xl_rowcol_to_cell(row, 2), xl_rowcol_to_cell(row, len(months) + 1)), fmt["money"], sum(totals.values()))
@@ -220,6 +227,7 @@ def _movements(sheet, snapshot, fmt):
     sheet.freeze_panes(1, 0)
     sheet.repeat_rows(0)
     concepts = {item["code"]: item["name"] for item in snapshot["concepts"]}
+    report_codes = {item["code"]: item.get("report_code") or item["code"] for item in snapshot["concepts"]}
     row = 1
     for movement in snapshot["movements"]:
         allocations = movement["allocations"] or [{"code": "", "amount": 0, "origin": "pending"}]
@@ -234,13 +242,16 @@ def _movements(sheet, snapshot, fmt):
             values = {
                 1: movement["accounting_dates"], 2: movement["document"], 3: movement["reference"],
                 4: movement["partner"], 5: movement["description"], 6: movement["method"],
-                7: code, 8: concepts.get(code, "Pendiente de clasificar"),
+                7: report_codes.get(code, ""), 8: concepts.get(code, "Pendiente de clasificar"),
                 13: snapshot["metadata"]["company_currency"], 14: movement["linked_documents"],
                 15: movement["counterparty_bank"], 16: movement["counterparty_account"],
                 17: allocation.get("note") or movement["note"], 18: origin,
             }
             for col, value in values.items():
-                sheet.write_string(row, col, value or "", fmt["text"])
+                if value:
+                    sheet.write_string(row, col, value, fmt["text"])
+                else:
+                    sheet.write_blank(row, col, None, fmt["text"])
             sheet.write_number(row, 9, allocation["amount"] if movement["amount"] >= 0 else 0, fmt["money"])
             sheet.write_number(row, 10, allocation["amount"] if movement["amount"] < 0 else 0, fmt["money"])
             if last and movement["running_balance"] is not None:

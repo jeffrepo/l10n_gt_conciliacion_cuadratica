@@ -17,11 +17,11 @@
     </record>
     <record id="cq_concept_list" model="ir.ui.view">
         <field name="name">cq.concept.list</field><field name="model">cq.concept</field>
-        <field name="arch" type="xml"><list><field name="sequence"/><field name="code"/><field name="name"/><field name="direction"/><field name="detail"/><field name="active" optional="hide"/></list></field>
+        <field name="arch" type="xml"><list><field name="sequence"/><field name="report_code"/><field name="name"/><field name="direction"/><field name="detail"/><field name="code" optional="hide"/><field name="active" optional="hide"/></list></field>
     </record>
     <record id="cq_concept_form" model="ir.ui.view">
         <field name="name">cq.concept.form</field><field name="model">cq.concept</field>
-        <field name="arch" type="xml"><form><sheet><group><field name="name"/><field name="code"/><field name="direction"/><field name="sequence"/><field name="detail"/><field name="active"/></group></sheet></form></field>
+        <field name="arch" type="xml"><form><sheet><group><field name="name"/><field name="report_code"/><field name="code" string="Código interno"/><field name="direction"/><field name="sequence"/><field name="detail"/><field name="active"/></group></sheet></form></field>
     </record>
     <record id="cq_rule_list" model="ir.ui.view">
         <field name="name">cq.rule.list</field><field name="model">cq.rule</field>

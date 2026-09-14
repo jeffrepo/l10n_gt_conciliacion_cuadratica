@@ -1,5 +1,3 @@
-from datetime import date
-
 from odoo import Command
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -152,6 +150,17 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         report = self._report()
         self.assertEqual(report.month_ids.ledger_suspense, -100)
         self.assertEqual(report.month_ids.income, 100)
+
+    def test_explicit_origin_precedes_current_account_mapping(self):
+        other = self.env["account.journal"].create({
+            "name": "CQ source bank", "code": "CQS2", "type": "bank", "company_id": self.company.id,
+        })
+        source = self.env["account.bank.statement.line"].create({
+            "journal_id": other.id, "date": "2024-01-20", "payment_ref": "Original bank", "amount": 25,
+        })
+        line = source.move_id.line_ids[:1]
+        owner = self.env["cq.report"]._line_owner(line, {self.bank.id}, {})
+        self.assertEqual(owner, other.id)
 
     def test_wizard_view_and_company_boundary(self):
         with Form(self.env["cq.generate.wizard"]) as form:
