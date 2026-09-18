@@ -341,3 +341,114 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         _, line = self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
         with self.assertRaises(ValidationError), self.cr.savepoint():
             line.cq_concept_id = self.out_concept
+
+    def _restrict_existing_contact(self):
+        other = self.env["res.company"].sudo().create({"name": "CQ contact isolation"})
+        # Contacts can be restricted after historical entries were posted.
+        self.partner_a.sudo().with_company(other).write({
+            "company_id": other.id, "name": "Private CQ counterpart",
+        })
+        self.env.flush_all()
+        self.env.invalidate_all()
+        return other
+
+    def test_restricted_contact_keeps_amounts_without_reading_foreign_data(self):
+        _, source = self._statement("2024-01-29", 100, 0, 100, "2024-01-31", classified=False)
+        self._restrict_existing_contact()
+        model = self.env["cq.report"].with_user(self.env.user).with_context(allowed_company_ids=self.company.ids)
+        foreign_partner = model.env["res.partner"].browse(self.partner_a.id)
+        self.assertFalse(model.env.su)
+        self.assertFalse(foreign_partner.has_access("read"))
+        with self.assertRaises(AccessError):
+            foreign_partner.check_access("read")
+        self.assertTrue(source.with_env(model.env).has_access("read"))
+        self.env["cq.rule"].create({
+            "name": "Foreign customers only", "company_id": self.company.id,
+            "concept_id": self.in_concept.id, "country_scope": "foreign",
+        })
+        report = model._generate(self.company, self.bank.default_account_id, 2024, 1)
+        self.assertEqual(report.company_id, self.company)
+        self.assertEqual(report.month_ids.income, 100)
+        self.assertEqual(report.month_ids.ledger_bank, 100)
+        self.assertEqual(report.month_ids.difference, 0)
+        self.assertIn("partner_access", report.issue_ids.mapped("code"))
+        self.assertEqual(len(report.issue_ids.filtered(lambda issue: issue.code == "partner_access")), 1)
+        self.assertEqual(report.unclassified_count, 1)
+        self.assertEqual(report.payload["movements"][0]["partner"], "Contacto restringido")
+        self.assertNotIn("Private CQ counterpart", str(report.payload))
+        self.assertEqual(model.env.companies, self.company)
+        self.assertTrue(report._xlsx_bytes().startswith(b"PK"))
+        with self.assertRaises(UserError):
+            report.action_confirm()
+
+    def test_report_company_is_independent_of_other_active_companies(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        other = self._restrict_existing_contact()
+        user = self.env.user
+        user.sudo().write({"company_ids": [Command.link(other.id)]})
+        model = self.env["cq.report"].with_user(user).with_context(allowed_company_ids=[other.id, self.company.id])
+        # The contact is readable in the UI session, but not in a report scoped
+        # to another company. The result must not depend on the top-bar choices.
+        self.assertTrue(model.env["res.partner"].browse(self.partner_a.id).has_access("read"))
+        wizard = model.env["cq.generate.wizard"].create({
+            "company_id": self.company.id, "year": 2024, "month": "1",
+            "account_ids": [Command.set(self.bank.default_account_id.ids)],
+        })
+        wizard.action_calculate()
+        report = wizard.report_ids
+        self.assertEqual(report.company_id, self.company)
+        self.assertEqual(report.payload["metadata"]["company"], self.company.name)
+        self.assertEqual(report.month_ids.income, 100)
+        self.assertIn("partner_access", report.issue_ids.mapped("code"))
+        self.assertNotIn("Private CQ counterpart", str(report.payload))
+        self.assertEqual(model.env.company, other)
+        self.assertEqual(set(model.env.companies.ids), {other.id, self.company.id})
+
+    def test_metadata_does_not_prefetch_other_company_contacts(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        other = self.env["res.company"].sudo().create({"name": "CQ unrelated metadata"})
+        other.partner_id.sudo().company_id = other
+        self.env.flush_all()
+        self.env.invalidate_all()
+        model = self.env["cq.report"].with_user(self.env.user).with_context(allowed_company_ids=self.company.ids)
+        companies = model.env["res.company"].browse([other.id, self.company.id])
+        report = model._generate(companies[1], self.bank.default_account_id, 2024, 1)
+        self.assertEqual(report.issue_count, 0, report.payload["issues"])
+        self.assertEqual(report.payload["metadata"]["company"], self.company.name)
+
+    def test_restricted_commercial_contact_and_bank_details_are_not_exposed(self):
+        parent = self.env["res.partner"].create({"name": "Hidden CQ parent", "is_company": True})
+        child = self.env["res.partner"].create({"name": "Visible CQ child", "parent_id": parent.id})
+        bank = self.env["res.partner.bank"].create({
+            "acc_number": "PRIVATE-CQ-9988", "partner_id": child.id,
+        })
+        self.env["ir.rule"].sudo().create({
+            "name": "CQ hidden commercial entity", "model_id": self.env.ref("base.model_res_partner").id,
+            "domain_force": "[('id', '!=', %d)]" % parent.id,
+        })
+        model = self.env["cq.report"].with_user(self.env.user).with_context(allowed_company_ids=self.company.ids)
+        self.assertTrue(child.with_env(model.env).has_access("read"))
+        self.assertFalse(parent.with_env(model.env).has_access("read"))
+        partners, banks = {}, {}
+        info = model._partner_info(child, partners)
+        self.assertTrue(info["restricted"])
+        self.assertFalse(info["country_id"])
+        self.assertFalse(info["partner_id"])
+        bank_info = model._counterparty_bank_info(bank, partners, banks)
+        self.assertTrue(bank_info["restricted"])
+        self.assertFalse(bank_info["number"])
+        self.assertFalse(bank_info["commercial_id"])
+
+    def test_contact_prefetch_is_isolated_from_restricted_siblings(self):
+        other = self.env["res.company"].sudo().create({"name": "CQ unrelated contact"})
+        private = self.env["res.partner"].sudo().with_company(other).create({
+            "name": "Private CQ unrelated", "company_id": other.id,
+        })
+        self.env.flush_all()
+        self.env.invalidate_all()
+        model = self.env["cq.report"].with_user(self.env.user).with_context(allowed_company_ids=self.company.ids)
+        partners = model.env["res.partner"].browse([self.partner_a.id, private.id])
+        info = model._partner_info(partners[0], {})
+        self.assertFalse(info["restricted"])
+        self.assertEqual(info["partner_id"], self.partner_a.id)
+        self.assertEqual(info["name"], self.partner_a.display_name)

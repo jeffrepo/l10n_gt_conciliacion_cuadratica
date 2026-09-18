@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.1.0`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.1.1`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de la biblioteca Python `xlsxwriter`; funciona sobre los modelos
@@ -157,6 +157,13 @@ Los importes faltantes se muestran como `n.d.` en el XLSX, no como un cero valid
 - Las cuentas transitorias compartidas se atribuyen mediante el banco del
   movimiento, pago, diario o relación de conciliación. Los apuntes sin atribución
   inequívoca quedan señalados y no se asignan silenciosamente a una empresa/banco.
+- Cada cálculo utiliza únicamente el contexto de la empresa del asistente,
+  independientemente de las otras empresas activas en la barra superior. Los
+  contactos y cuentas de contraparte se leen con los permisos reales del usuario.
+  Si un movimiento válido referencia un contacto restringido, se conservan su
+  importe y sus partidas; los datos inaccesibles se omiten y se registra un
+  pendiente de revisión. No se amplían empresas activas ni permisos para leerlos.
+  El país desconocido de un contacto restringido no lo clasifica como extranjero.
 - Un diario en USD necesita que sus apuntes de banco y pendientes conserven USD.
   Los apuntes que solo conservan otra moneda generan un pendiente de revisión.
 - Un mes sin extracto de control al cierre se puede exportar como borrador.
@@ -189,7 +196,7 @@ odoo-bin -d cq_test -i l10n_us,l10n_gt_conciliacion_cuadratica \
 no es una dependencia del módulo. GitHub Actions instala el módulo en Odoo 19
 con PostgreSQL 16 y ejecuta las pruebas de integración y de exportación.
 
-## Actualización desde 19.0.1.0.0
+## Actualización desde versiones anteriores
 
 Actualizar el código, reiniciar Odoo y **actualizar el módulo instalado**:
 
@@ -204,3 +211,10 @@ en el formulario. Usar **Generar nueva versión** para obtener el resultado por
 cuenta contable. Si varios diarios contienen extractos, configurar antes el diario
 de control. Las pruebas de CI también actualizan una instalación de la versión
 anterior para verificar los cambios de modelos y vistas.
+
+La versión 19.0.1.1.1 corrige los errores de acceso a contactos de otras compañías
+durante la generación. No cambia las compañías de los contactos ni las reglas de
+seguridad existentes. Los pendientes de contacto se resuelven revisando la relación
+en el documento original y la configuración de acceso; después se genera una nueva
+versión del reporte. No es necesario activar compañías ajenas para poder exportar
+un borrador con los importes de la compañía seleccionada.

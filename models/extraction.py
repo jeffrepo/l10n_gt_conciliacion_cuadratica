@@ -16,12 +16,17 @@ class QuadraticExtraction(models.Model):
         """Private entry point: every search honors the requesting user's ACLs."""
         if company.id not in self.env.companies.ids:
             raise AccessError(_("Seleccione una compañía permitida."))
+        company.ensure_one()
         account.ensure_one()
+        # A report has one company, independently of the companies checked in
+        # the top bar. Re-browse inputs so unrelated prefetch records cannot
+        # pull contacts from other companies into metadata computations.
+        model = self.with_context(allowed_company_ids=company.ids).with_company(company)
+        company = model.env["res.company"].browse(company.id)
+        account = model.env["account.account"].browse(account.id)
         account.check_access("read")
         if company not in account.company_ids:
             raise UserError(_("La cuenta contable debe estar disponible en la compañía indicada."))
-        model = self.with_company(company)
-        account = account.with_company(company)
         journals = model.env["account.journal"].with_context(active_test=False).search([
             ("company_id", "=", company.id), ("type", "=", "bank"),
             ("default_account_id", "=", account.id),
@@ -67,6 +72,28 @@ class QuadraticExtraction(models.Model):
     def _extract(self, company, account, journals, currency, year, month):
         start, cutoff = date(year, 1, 1), month_end(year, month)
         issues = []
+        partner_cache, bank_cache, restricted_sources = {}, {}, set()
+
+        def contact_info(partner, document, source_id=False):
+            info = self._partner_info(partner, partner_cache)
+            if info["restricted"] and ("partner", partner.id) not in restricted_sources:
+                restricted_sources.add(("partner", partner.id))
+                issues.append({
+                    "code": "partner_access", "source_id": source_id,
+                    "message": _("El documento %s tiene un contacto restringido en la empresa del reporte. Se conserva el importe y se omiten los datos del contacto. Revise la compañía y los permisos de la contraparte en el registro original.", document),
+                })
+            return info
+
+        def bank_info(bank, document, source_id=False):
+            info = self._counterparty_bank_info(bank, partner_cache, bank_cache)
+            if info["restricted"] and ("bank", bank.id) not in restricted_sources:
+                restricted_sources.add(("bank", bank.id))
+                issues.append({
+                    "code": "partner_bank_access", "source_id": source_id,
+                    "message": _("El documento %s tiene datos bancarios de contraparte restringidos en la empresa del reporte. Se conserva el importe y se omiten esos datos. Revise el registro original.", document),
+                })
+            return info
+
         bank_lines = self.env["account.bank.statement.line"].search([
             ("company_id", "=", company.id), ("journal_id", "in", journals.ids),
             ("state", "=", "posted"), ("date", "<=", cutoff),
@@ -135,7 +162,8 @@ class QuadraticExtraction(models.Model):
             ledger.append({
                 "source_id": line.id, "move_id": line.move_id.id, "date": str(line.date),
                 "document": line.move_id.name, "description": line.name or "",
-                "partner": line.partner_id.display_name or "", "account": line.account_id.display_name,
+                "partner": contact_info(line.partner_id, line.move_id.name, line.statement_line_id.id)["name"],
+                "account": line.account_id.display_name,
                 "journal": line.journal_id.display_name,
                 "method_code": line.payment_id.payment_method_code or "",
                 "method": line.payment_id.payment_method_line_id.name or "",
@@ -192,10 +220,11 @@ class QuadraticExtraction(models.Model):
             linked_moves = self._linked_moves(line, cutoff)
             payments = linked_moves.origin_payment_id
             partner = line.partner_id or (payments.partner_id if len(payments.partner_id) == 1 else self.env["res.partner"])
-            partner_country = partner.commercial_partner_id.country_id
+            partner_data = contact_info(partner, line.move_id.name, line.id)
+            partner_country_id = partner_data["country_id"]
             country_scope = "unknown"
-            if partner_country and company.country_id:
-                country_scope = "local" if partner_country == company.country_id else "foreign"
+            if partner_country_id and company.country_id:
+                country_scope = "local" if partner_country_id == company.country_id.id else "foreign"
             counterpart_accounts = (line.move_id | linked_moves).line_ids.account_id - ledger_accounts
             description = line.payment_ref or line.move_id.ref or ""
             allocations = []
@@ -206,7 +235,7 @@ class QuadraticExtraction(models.Model):
             else:
                 rule, ambiguous = choose_rule(
                     [rule for rule in rule_data if not rule["journal_id"] or rule["journal_id"] == line.journal_id.id],
-                    "in" if line.amount >= 0 else "out", partner.id,
+                    "in" if line.amount >= 0 else "out", partner_data["partner_id"],
                     country_scope, counterpart_accounts.ids, payments.mapped("payment_method_code"), description,
                 )
                 if ambiguous:
@@ -214,20 +243,25 @@ class QuadraticExtraction(models.Model):
                                    "message": "Movimiento %s: dos reglas con la misma prioridad proponen conceptos distintos." % line.move_id.name})
                 if rule and not currency.is_zero(line.amount):
                     allocations = [{"code": rule["concept_code"], "amount": abs(line.amount), "origin": "rule", "rule_id": rule["id"]}]
-            partner_banks = payments.partner_bank_id.filtered(lambda bank: bank.partner_id.commercial_partner_id == partner.commercial_partner_id) if partner else self.env["res.partner.bank"]
-            identified_bank = partner_banks if len(partner_banks) == 1 else self.env["res.partner.bank"]
+            partner_banks = []
+            if partner_data["commercial_id"]:
+                for bank in payments.partner_bank_id:
+                    details = bank_info(bank, line.move_id.name, line.id)
+                    if details["commercial_id"] == partner_data["commercial_id"]:
+                        partner_banks.append(details)
+            identified_bank = partner_banks[0] if len(partner_banks) == 1 else {}
             company_amount = sum(line.move_id.line_ids.filtered(lambda aml: aml.account_id == account).mapped("balance"))
             movements.append({
                 "source_id": line.id, "move_id": line.move_id.id, "date": str(line.date),
                 "document": line.move_id.name or "", "reference": line.move_id.ref or "",
                 "journal": line.journal_id.display_name,
-                "partner": partner.display_name or line.partner_name or "",
+                "partner": partner_data["name"] or line.partner_name or "",
                 "description": description, "amount": line.amount, "company_amount": company_amount,
                 "accounting_dates": ", ".join(sorted({str(move.date) for move in linked_moves})),
                 "linked_documents": ", ".join(sorted(set(linked_moves.mapped("name")))),
                 "method": ", ".join(sorted(set(payments.payment_method_line_id.mapped("name")))) or line.transaction_type or "",
-                "counterparty_account": identified_bank.acc_number or line.account_number or "",
-                "counterparty_bank": identified_bank.bank_id.name or "",
+                "counterparty_account": identified_bank.get("number") or line.account_number or "",
+                "counterparty_bank": identified_bank.get("name", ""),
                 "note": line.cq_note or "", "allocations": allocations,
             })
         account_types = set(journals.mapped("cq_account_type"))
@@ -251,6 +285,50 @@ class QuadraticExtraction(models.Model):
                           "sequence": item.sequence, "detail": item.detail} for item in concepts],
             "movements": movements, "issues": issues,
         }
+
+    def _partner_info(self, partner, cache):
+        """Read optional contact data with the report user's real permissions.
+
+        IDs on accessible entries do not grant access to their related records.
+        Guard even cached fields, and isolate prefetch before reading a contact
+        or its commercial entity. Never widen companies or use sudo here.
+        """
+        empty = {"partner_id": False, "name": "", "commercial_id": False,
+                 "country_id": False, "restricted": False}
+        if not partner:
+            return empty
+        if partner.id not in cache:
+            partner = self.env["res.partner"].browse(partner.id)
+            try:
+                partner.check_access("read")
+                commercial = self.env["res.partner"].browse(partner.commercial_partner_id.id)
+                if commercial:
+                    commercial.check_access("read")
+                cache[partner.id] = {
+                    "partner_id": partner.id, "name": partner.display_name or "",
+                    "commercial_id": commercial.id, "country_id": commercial.country_id.id,
+                    "restricted": False,
+                }
+            except AccessError:
+                cache[partner.id] = {**empty, "name": _("Contacto restringido"), "restricted": True}
+        return cache[partner.id]
+
+    def _counterparty_bank_info(self, bank, partner_cache, cache):
+        if bank.id not in cache:
+            bank = self.env["res.partner.bank"].browse(bank.id)
+            restricted = {"commercial_id": False, "number": "", "name": "", "restricted": True}
+            try:
+                bank.check_access("read")
+                partner = self._partner_info(bank.partner_id, partner_cache)
+                if partner["restricted"]:
+                    cache[bank.id] = restricted
+                else:
+                    cache[bank.id] = {"commercial_id": partner["commercial_id"],
+                                      "number": bank.acc_number or "", "name": bank.bank_id.name or "",
+                                      "restricted": False}
+            except AccessError:
+                cache[bank.id] = restricted
+        return cache[bank.id]
 
     def _line_owner(self, line, account_owners, cache):
         """Return the bank ledger account owning a shared clearing entry.
