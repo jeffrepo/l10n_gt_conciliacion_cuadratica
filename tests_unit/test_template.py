@@ -43,6 +43,19 @@ def row_for(sheet, label, last=False):
 
 
 class TestTemplate(unittest.TestCase):
+    def test_usd_variant_keeps_data_header_on_row_eight(self):
+        template = template_workbook()
+        template["Data"].insert_rows(7)
+        data = fixture()
+        data["metadata"]["currency"] = "USD"
+        result = export_xlsx(build_snapshot(data), template=saved(template))
+        book = openpyxl.load_workbook(BytesIO(result), data_only=True)
+        self.assertEqual(book["Data"]["A8"].value, "Mes de cobro")
+        self.assertIsNone(book["Data"]["A7"].value)
+        self.assertEqual(book["Data"]["K9"].value, 1000)
+        self.assertEqual(book["Data"]["K11"].value, 1195)
+        self.assertEqual(book["Banco"]["F8"].value, "Dólares")
+        self.assertEqual(book["Banco"]["F35"].value, "Valor $")
     def test_all_twelve_month_openings_and_empty_months(self):
         data = fixture()
         data["month"] = 12

@@ -85,10 +85,13 @@ def read_template(data):
     except (BadZipFile, KeyError, OSError, ET.ParseError) as error:
         raise ValueError("El archivo no es una plantilla XLSX válida.") from error
     mains = [sheet for sheet in book if normalized(sheet["C19"].value) == "saldoinicialsegunbanco"]
-    datas = [sheet for sheet in book if normalized(sheet["A7"].value) == "mesdecobro" and normalized(sheet["I7"].value) == "ingreso" and normalized(sheet["J7"].value) == "egreso"]
-    if len(mains) != 1 or len(datas) != 1 or mains[0] == datas[0]:
-        raise ValueError("Use el formato de referencia: una hoja Banco con SALDO INICIAL SEGÚN BANCO en C19 y una hoja Data con encabezados en la fila 7.")
-    main, data_sheet = mains[0], datas[0]
+    datas = [(sheet, row) for sheet in book for row in (7, 8)
+             if normalized(sheet.cell(row, 1).value) == "mesdecobro"
+             and normalized(sheet.cell(row, 9).value) == "ingreso"
+             and normalized(sheet.cell(row, 10).value) == "egreso"]
+    if len(mains) != 1 or len(datas) != 1 or mains[0] == datas[0][0]:
+        raise ValueError("Use el formato de referencia: una hoja Banco con SALDO INICIAL SEGÚN BANCO en C19 y una hoja Data con encabezados en la fila 7 u 8.")
+    main, (data_sheet, data_header) = mains[0], datas[0]
     if main.max_row > 2000 or main.max_column > 200 or data_sheet.max_row > 20000 or data_sheet.max_column > 200:
         raise ValueError("La plantilla excede el tamaño admitido. Retire históricos y formatos sobrantes.")
     for idx, month in enumerate(MONTHS):
@@ -127,7 +130,7 @@ def read_template(data):
             raise ValueError("Los bloques de la plantilla no conservan el orden del formato de referencia.")
         bank_only = key in ("IN_TRANSFER", "OUT_TRANSFER")
         details[key] = [{"row": row, "label": tuple(str(main.cell(row, col).value or "") for col in ((3, 4) if bank_only else (3, 4, 5)))} for row in range(start, end)]
-    return {"book": book, "main": main, "data": data_sheet, "row_map": row_map,
+    return {"book": book, "main": main, "data": data_sheet, "data_header": data_header, "row_map": row_map,
             "details": details, "form_end": totals[1], "bank": str(main["D6"].value or ""),
             "account": str(main["D8"].value or "")}
 
@@ -318,15 +321,17 @@ def fill_template(profile, generated, layout, snapshot):
         if name.attr_text:
             name.attr_text = _translate_formula("=" + name.attr_text, "", main.title, translate_row)[1:]
 
-    original_data_styles = {(row, col): copy(data_sheet.cell(row, col)) for row in (7, 8, 9) for col in range(1, 24)}
+    data_header = profile["data_header"]
+    offset = data_header - 7
+    original_data_styles = {(row, col): copy(data_sheet.cell(row + offset, col)) for row in (7, 8, 9) for col in range(1, 24)}
     table_names = list(data_sheet.tables)
     table_style = copy(data_sheet.tables[table_names[0]].tableStyleInfo) if table_names else None
     for name in table_names:
         del data_sheet.tables[name]
     for merged in list(data_sheet.merged_cells.ranges):
-        if merged.max_row >= 7 and merged.min_col <= 23:
+        if merged.max_row >= data_header and merged.min_col <= 23:
             data_sheet.unmerge_cells(str(merged))
-    for row in data_sheet.iter_rows(min_row=7, max_col=23):
+    for row in data_sheet.iter_rows(min_row=data_header, max_col=23):
         for cell in row:
             cell.value = None
             cell.hyperlink = None
@@ -336,7 +341,7 @@ def fill_template(profile, generated, layout, snapshot):
         for source in row:
             if source.row < 7 and source.coordinate not in ("D1", "D2", "D3"):
                 continue
-            target = data_sheet.cell(source.row, source.column)
+            target = data_sheet.cell(source.row + offset if source.row >= 7 else source.row, source.column)
             _copy_cell(source, target)
             prototype = original_data_styles.get((min(source.row, 9), source.column))
             if prototype is not None and prototype.has_style:
@@ -347,12 +352,14 @@ def fill_template(profile, generated, layout, snapshot):
     for col, dimension in source_data.column_dimensions.items():
         if dimension.min >= 12:
             data_sheet.column_dimensions[col] = copy(dimension)
-    table = Table(displayName=table_names[0] if table_names else "MovimientosCQ", ref="A7:K%s" % max(source_data.max_row, 8))
+    last_data_row = max(source_data.max_row, 8) + offset
+    table = Table(displayName=table_names[0] if table_names else "MovimientosCQ", ref="A%s:K%s" % (data_header, last_data_row))
     table.tableStyleInfo = table_style
     data_sheet.add_table(table)
-    data_sheet.auto_filter.ref = "A7:W%s" % max(source_data.max_row, 8)
-    data_sheet.freeze_panes = "A9"
-    data_sheet.print_area = "A1:W%s" % max(source_data.max_row, 8)
+    data_sheet.auto_filter.ref = "A%s:W%s" % (data_header, last_data_row)
+    data_sheet.freeze_panes = "A%s" % (data_header + 2)
+    data_sheet.row_dimensions[data_header].height = max(data_sheet.row_dimensions[data_header].height or 15, 30)
+    data_sheet.print_area = "A1:W%s" % last_data_row
     data_sheet.protection.sheet = False
 
     for name in ("Partidas conciliatorias", "Control Odoo"):

@@ -104,7 +104,7 @@ Varias cuentas en el mismo ZIP usan cada una su propia plantilla.
 
 Se admite la estructura de los formatos proporcionados en GTQ y USD: saldo
 inicial en C19, meses en la fila 18 con dos columnas por mes (F:AC), totales
-en AD:AE y tabla Data con encabezados en la fila 7. Los nombres de las hojas
+en AD:AE y tabla Data con encabezados en la fila 7 u 8. Los nombres de las hojas
 pueden variar. No es un importador universal de cualquier diseño Excel; se
 valida la estructura al guardar. Se permiten archivos XLSX de hasta 8 MB,
 sin macros ni vínculos a otros libros.

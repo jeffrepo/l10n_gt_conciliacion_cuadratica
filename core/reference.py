@@ -128,6 +128,8 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         add(code, label, amounts(code), code=concepts.get(code, {}).get("report_code", ""), height=height)
         groups = _groups(snapshot, code, bank_only, profile) if reserve else []
         if reserve:
+            if profile:
+                reserve = len(profile["details"].get(code, []))
             origin_row = (profile or {}).get("row_map", {}).get(code)
             rows.append(dict(row=len(rows) + 19, key="", header=True, bank_only=bank_only, person_label=person_label, template_row=origin_row + 1 if origin_row else None))
             children = []
@@ -148,7 +150,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         codes = [code for code, item in concepts.items() if item["direction"] == direction and code not in used and code not in fixed]
         pending = "unclassified_" + direction
         codes.append(pending)
-        codes = [code for code in codes if any(amounts(code))]
+        codes = [code for code in codes if any(amounts(code)) or code in (profile or {}).get("row_map", {})]
         children = list(fixed) + codes
         key = "other_" + direction
         values = [float(sum((decimal(month["concept_totals"].get(code, 0)) for code in children), decimal(0))) for month in months]
