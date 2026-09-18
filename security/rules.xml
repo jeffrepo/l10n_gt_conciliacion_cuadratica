@@ -1,4 +1,8 @@
 <odoo>
+    <record id="cq_template_company" model="ir.rule">
+        <field name="name">Plantillas cuadráticas por compañía</field><field name="model_id" ref="model_cq_xlsx_template"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
     <record id="cq_rule_company" model="ir.rule">
         <field name="name">Reglas cuadráticas por compañía</field><field name="model_id" ref="model_cq_rule"/>
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>

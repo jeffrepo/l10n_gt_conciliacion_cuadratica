@@ -190,6 +190,7 @@ def build_snapshot(data):
                 key = allocation["code"] or ("unclassified_in" if row["amount"] >= 0 else "unclassified_out")
                 totals[key] = totals.get(key, Decimal("0")) + decimal(allocation["amount"])
         values = {
+            "book_opening": sum((decimal(line["amount"]) for line in data["ledger"] if line["date"] < month_start), Decimal("0")),
             "bank_opening": bank_opening, "income": income, "expense": expense,
             "bank_end": bank_end, "statement_end": control_value,
             "bank_difference": control_difference, "deposits": deposits,

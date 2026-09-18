@@ -1,3 +1,8 @@
+import base64
+from io import BytesIO
+
+from openpyxl import load_workbook
+
 from odoo import Command
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -27,6 +32,7 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         cls.bank.bank_account_id = cls.env["res.partner.bank"].create({
             "acc_number": "TEST-CQ-0001", "partner_id": cls.company.partner_id.id,
             "company_id": cls.company.id,
+            "bank_id": cls.env["res.bank"].create({"name": "Banco sintético CQ"}).id,
         })
         cls.in_concept = cls.env.ref("l10n_gt_conciliacion_cuadratica.concept_in_customers_local")
         cls.out_concept = cls.env.ref("l10n_gt_conciliacion_cuadratica.concept_out_suppliers")
@@ -218,9 +224,9 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         from io import BytesIO
         from openpyxl import load_workbook
         workbook = load_workbook(BytesIO(report._xlsx_bytes()), data_only=True)
-        self.assertEqual(workbook["Movimientos"].max_row, 4)
-        self.assertEqual(workbook["Movimientos"]["U4"].value, transfers.display_name)
-        self.assertIn(transfers.display_name, workbook["Conciliación"]["A9"].value)
+        self.assertEqual(workbook["Data"].max_row, 11)
+        self.assertEqual(workbook["Data"]["W11"].value, transfers.display_name)
+        self.assertTrue(any(transfers.display_name in str(cell.value or "") for row in workbook["Banco"] for cell in row))
 
     def test_payments_from_related_journals_and_other_bank_stay_separate(self):
         checks = self._related_journal("CQCH")
@@ -452,3 +458,74 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertFalse(info["restricted"])
         self.assertEqual(info["partner_id"], self.partner_a.id)
         self.assertEqual(info["name"], self.partner_a.display_name)
+
+    def _template(self, note="Texto manual conservado"):
+        from ..core.template import read_template
+        raw = self._report()._xlsx_bytes()
+        book = load_workbook(BytesIO(raw))
+        end = read_template(raw)["form_end"]
+        for merged in list(book["Banco"].merged_cells.ranges):
+            if merged.min_row > end:
+                book["Banco"].unmerge_cells(str(merged))
+        book["Banco"].delete_rows(end + 1, book["Banco"].max_row)
+        book.create_sheet("Notas manuales")["A1"] = note
+        output = BytesIO()
+        book.save(output)
+        return self.env["cq.xlsx.template"].create({
+            "name": "CQ plantilla", "company_id": self.company.id,
+            "account_id": self.bank.default_account_id.id, "file_name": "formato.xlsx",
+            "file_data": base64.b64encode(output.getvalue()),
+        })
+
+    def test_template_is_selected_by_account_and_copied_into_snapshot(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        template = self._template()
+        report = self._report()
+        self.assertEqual(report.template_id, template)
+        original_bytes = report.template_data
+        book = load_workbook(BytesIO(base64.b64decode(template.file_data)))
+        book["Notas manuales"]["A1"] = "Plantilla modificada después del cálculo"
+        output = BytesIO()
+        book.save(output)
+        template.file_data = base64.b64encode(output.getvalue())
+        self.assertEqual(report.template_data, original_bytes)
+        exported = load_workbook(BytesIO(report._xlsx_bytes()), data_only=True)
+        self.assertEqual(exported["Notas manuales"]["A1"].value, "Texto manual conservado")
+        self.assertEqual(exported["Banco"]["G19"].value, 0)
+        self.assertEqual(exported["Data"]["K9"].value, 100)
+        self.assertEqual(exported["Banco"]["D12"].value, self.bank.default_account_id.code)
+        updated = load_workbook(BytesIO(self._report()._xlsx_bytes()), data_only=True)
+        self.assertEqual(updated["Notas manuales"]["A1"].value, "Plantilla modificada después del cálculo")
+
+    def test_wizard_uses_explicit_template_and_rejects_other_account(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        template = self._template()
+        wizard = self.env["cq.generate.wizard"].create({
+            "company_id": self.company.id, "year": 2024, "month": "1",
+            "account_ids": [Command.set(self.bank.default_account_id.ids)], "template_id": template.id,
+        })
+        wizard.action_calculate()
+        self.assertEqual(wizard.report_ids.template_id, template)
+        another = self.env["account.journal"].create({"name": "CQ another bank", "code": "CQALT", "type": "bank", "company_id": self.company.id})
+        template.account_id = another.default_account_id
+        with self.assertRaises(UserError):
+            wizard.action_calculate()
+        with self.assertRaises(UserError):
+            self.env["cq.report"]._generate(self.company, self.bank.default_account_id, 2024, 1, template=template)
+
+    def test_invalid_template_is_rejected_before_generation(self):
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            self.env["cq.xlsx.template"].create({
+                "name": "Invalid", "company_id": self.company.id,
+                "account_id": self.bank.default_account_id.id, "file_name": "formato.xlsx",
+                "file_data": base64.b64encode(b"not an xlsx"),
+            })
+
+    def test_missing_bank_name_is_not_replaced_by_ledger_account(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        self.bank.bank_account_id.bank_id = False
+        report = self._report()
+        self.assertEqual(report.payload["metadata"]["bank"], "")
+        self.assertIn("bank_name", report.issue_ids.mapped("code"))
+        self.assertEqual(report.month_ids.bank_end, 100)
+        self.assertEqual(report.payload["movements"][0]["accounting_date"], "2024-01-29")

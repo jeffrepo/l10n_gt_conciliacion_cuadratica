@@ -8,3 +8,5 @@ access_cq_report_user,cq.report user,model_cq_report,account.group_account_user,
 access_cq_month_user,cq.report.month user,model_cq_report_month,account.group_account_user,1,1,1,0
 access_cq_issue_user,cq.report.issue user,model_cq_report_issue,account.group_account_user,1,1,1,0
 access_cq_generate_user,cq.generate.wizard user,model_cq_generate_wizard,account.group_account_user,1,1,1,1
+access_cq_template_user,cq.xlsx.template user,model_cq_xlsx_template,account.group_account_user,1,0,0,0
+access_cq_template_manager,cq.xlsx.template manager,model_cq_xlsx_template,account.group_account_manager,1,1,1,1

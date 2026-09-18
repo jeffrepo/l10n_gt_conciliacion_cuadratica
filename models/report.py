@@ -63,6 +63,9 @@ class QuadraticReport(models.Model):
     issue_ids = fields.One2many("cq.report.issue", "report_id", string="Revisión")
     file_data = fields.Binary("Archivo XLSX", attachment=True)
     file_name = fields.Char("Nombre de archivo")
+    template_id = fields.Many2one("cq.xlsx.template", string="Plantilla utilizada", check_company=True, ondelete="restrict")
+    template_name = fields.Char("Nombre de plantilla conservada")
+    template_data = fields.Binary("Plantilla conservada", attachment=True, copy=False)
 
     def action_confirm(self):
         self.check_access("write")
@@ -82,7 +85,11 @@ class QuadraticReport(models.Model):
         self.check_access("read")
         if self.file_data:
             return base64.b64decode(self.file_data)
-        return export_xlsx(self.payload, confirmed=self.state == "confirmed")
+        try:
+            return export_xlsx(self.payload, confirmed=self.state == "confirmed",
+                               template=base64.b64decode(self.template_data) if self.template_data else None)
+        except ValueError as error:
+            raise UserError(_("No se pudo llenar la plantilla: %s", str(error))) from error
 
     def action_export(self):
         self.ensure_one()

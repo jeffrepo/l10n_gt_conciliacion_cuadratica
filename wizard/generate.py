@@ -21,6 +21,8 @@ class QuadraticGenerateWizard(models.TransientModel):
     all_accounts = fields.Boolean("Todas las cuentas habilitadas")
     available_account_ids = fields.Many2many("account.account", compute="_compute_available_accounts")
     account_ids = fields.Many2many("account.account", "cq_wizard_account_rel", string="Cuentas contables bancarias", check_company=True)
+    template_id = fields.Many2one("cq.xlsx.template", string="Plantilla específica", check_company=True,
+                                  help="Opcional para una sola cuenta. Si queda vacía, se usa la plantilla activa de cada cuenta, según su prioridad; si no existe, se usa el diseño incorporado.")
     state = fields.Selection([("select", "Selección"), ("result", "Resultados")], default="select")
     report_ids = fields.Many2many("cq.report", string="Resultados", readonly=True)
     file_data = fields.Binary("Archivo", readonly=True)
@@ -36,6 +38,7 @@ class QuadraticGenerateWizard(models.TransientModel):
     @api.onchange("company_id")
     def _onchange_company(self):
         self.account_ids = False
+        self.template_id = False
         self.report_ids = False
         self.state = "select"
 
@@ -54,9 +57,11 @@ class QuadraticGenerateWizard(models.TransientModel):
         accounts = self.available_account_ids if self.all_accounts else self.account_ids
         if not accounts:
             raise UserError(_("Seleccione cuentas contables bancarias o habilítelas en la configuración de diarios."))
+        if self.template_id and (len(accounts) != 1 or self.template_id.account_id != accounts or self.template_id.company_id != self.company_id):
+            raise UserError(_("La plantilla específica debe corresponder a la única cuenta seleccionada y a su empresa. Para varias cuentas, deje este campo vacío: se usará la plantilla de cada cuenta."))
         reports = self.env["cq.report"]
         for account in accounts:
-            reports |= self.env["cq.report"]._generate(self.company_id, account, self.year, int(self.month))
+            reports |= self.env["cq.report"]._generate(self.company_id, account, self.year, int(self.month), template=self.template_id)
         self.write({"report_ids": [(6, 0, reports.ids)], "state": "result", "file_data": False})
         return {"type": "ir.actions.act_window", "name": _("Conciliación cuadrática"),
                 "res_model": self._name, "res_id": self.id, "view_mode": "form", "target": "new"}

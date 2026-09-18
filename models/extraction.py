@@ -1,5 +1,7 @@
 from collections import defaultdict
+import base64
 from datetime import date
+import hashlib
 
 from odoo import Command, fields, models, _
 from odoo.exceptions import AccessError, UserError
@@ -12,7 +14,7 @@ from .report import INTERNAL
 class QuadraticExtraction(models.Model):
     _inherit = "cq.report"
 
-    def _generate(self, company, account, year, month):
+    def _generate(self, company, account, year, month, template=None):
         """Private entry point: every search honors the requesting user's ACLs."""
         if company.id not in self.env.companies.ids:
             raise AccessError(_("Seleccione una compañía permitida."))
@@ -40,8 +42,19 @@ class QuadraticExtraction(models.Model):
         if account.currency_id and account.currency_id != currency:
             raise UserError(_("La moneda de la cuenta contable no coincide con la de sus diarios bancarios."))
         generated_at = fields.Datetime.now()
+        template_model = model.env["cq.xlsx.template"]
+        template = template_model.browse(template.id) if template else template_model.search([
+            ("company_id", "=", company.id), ("account_id", "=", account.id),
+        ], limit=1)
+        if template:
+            template.check_access("read")
+            if template.company_id != company or template.account_id != account:
+                raise UserError(_("La plantilla debe pertenecer a la empresa y a la cuenta contable del reporte."))
+        template_data = template.file_data if template else False
         data = model._extract(company, account, journals, currency, year, month)
         data["metadata"].update({"generated_at": str(generated_at), "generated_by": self.env.user.display_name})
+        if template:
+            data["metadata"].update({"template_name": template.name, "template_sha256": hashlib.sha256(base64.b64decode(template_data)).hexdigest()})
         payload = build_snapshot(data)
         month_values = []
         month_model = self.env["cq.report.month"]
@@ -66,6 +79,8 @@ class QuadraticExtraction(models.Model):
             "issue_count": len(payload["issues"]),
             "unclassified_count": len({issue["source_id"] for issue in payload["issues"] if issue["code"] == "classification"}),
             "difference": payload["months"][-1]["difference"], "file_name": filename,
+            "template_id": template.id, "template_name": template.file_name if template else False,
+            "template_data": template_data,
         })
         return report.with_env(self.env)
 
@@ -112,6 +127,8 @@ class QuadraticExtraction(models.Model):
         elif len(bank_accounts) > 1:
             issues.append({"code": "bank_identity", "message": "La cuenta contable está vinculada a varias cuentas bancarias físicas. Revise esta configuración antes de conservar el cierre."})
         identified_account = bank_accounts if len(bank_accounts) == 1 else self.env["res.partner.bank"]
+        if identified_account and not identified_account.bank_id:
+            issues.append({"code": "bank_name", "message": "La cuenta bancaria vinculada no tiene un banco identificado. Configure el banco en esa cuenta; el nombre de la cuenta contable no identifica la entidad bancaria."})
         outstanding = self.env["account.account"]
         for bank in journals:
             outstanding |= bank._cq_outstanding_accounts()
@@ -253,6 +270,7 @@ class QuadraticExtraction(models.Model):
             company_amount = sum(line.move_id.line_ids.filtered(lambda aml: aml.account_id == account).mapped("balance"))
             movements.append({
                 "source_id": line.id, "move_id": line.move_id.id, "date": str(line.date),
+                "accounting_date": str(line.move_id.date),
                 "document": line.move_id.name or "", "reference": line.move_id.ref or "",
                 "journal": line.journal_id.display_name,
                 "partner": partner_data["name"] or line.partner_name or "",
@@ -271,9 +289,10 @@ class QuadraticExtraction(models.Model):
             "company_rounding": str(company.currency_id.rounding),
             "metadata": {
                 "company": company.name, "vat": company.vat or "", "country": company.country_id.name or "",
-                "bank": identified_account.bank_id.name or account.name,
+                "bank": identified_account.bank_id.name or "",
                 "account_number": identified_account.acc_number or "", "account_type": account_type,
                 "journal": ", ".join(journals.mapped("display_name")), "ledger_account": account.display_name,
+                "ledger_account_name": account.name, "ledger_account_code": account.code,
                 "account_id": account.id, "journal_ids": journals.ids,
                 "control_journal_id": control_journal.id,
                 "control_journal": control_journal.display_name or "",

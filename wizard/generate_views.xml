@@ -7,8 +7,9 @@
                 <field name="available_account_ids" invisible="1"/>
                 <field name="all_accounts" readonly="state == 'result'"/>
                 <field name="account_ids" widget="many2many_tags" invisible="all_accounts" readonly="state == 'result'" domain="[('id', 'in', available_account_ids)]" options="{'no_create': True}"/>
+                <field name="template_id" readonly="state == 'result'" invisible="all_accounts" domain="[('company_id', '=', company_id), ('account_id', 'in', account_ids)]" options="{'no_create': True}"/>
             </group>
-            <p invisible="state != 'select'">Se genera un XLSX por cuenta contable bancaria, de enero al mes de corte. Se reúnen todos sus diarios de la compañía, incluidos los archivados. Se consultan los extractos, apuntes publicados y conciliaciones existentes en Odoo. No es necesario subir archivos aquí.</p>
+            <p invisible="state != 'select'">Se genera un XLSX por cuenta contable bancaria, de enero al mes de corte, con todos sus diarios. Los datos salen de los extractos, apuntes publicados y conciliaciones de Odoo. La plantilla se carga una sola vez en Plantillas XLSX y se reutiliza por cuenta; si no hay una configurada, se usa el diseño incorporado.</p>
             <field name="report_ids" invisible="state != 'result'" readonly="1">
                 <list create="0" edit="0" delete="0"><field name="account_id"/><field name="journal_ids" widget="many2many_tags"/><field name="currency_id"/><field name="issue_count"/><field name="unclassified_count"/><field name="state"/></list>
             </field>

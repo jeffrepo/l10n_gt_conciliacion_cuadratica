@@ -1,16 +1,16 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.1.1`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.2.0`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
-de `account` y de la biblioteca Python `xlsxwriter`; funciona sobre los modelos
+de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
 contables comunes a Community y Enterprise. No depende de GDOMEX ni de `account_gt`.
 
 ## Instalación
 
 1. Colocar este repositorio con el nombre `l10n_gt_conciliacion_cuadratica` dentro
    de una ruta de addons de Odoo 19.
-2. Instalar `xlsxwriter` en el entorno Python del servidor si no está disponible.
+2. Instalar `xlsxwriter` y `openpyxl` en el entorno Python del servidor si no están disponibles.
 3. Actualizar la lista de aplicaciones e instalar **Conciliación cuadrática Guatemala**.
 4. Acceder con permisos de Contabilidad. La configuración de conceptos y reglas
    requiere permisos de administrador de Contabilidad.
@@ -68,7 +68,8 @@ al formato de la empresa sin cambiar la identificación interna de los conceptos
 ## Operación mensual
 
 1. Cargar los movimientos y estados de cuenta en el flujo bancario habitual de
-   Odoo y realizar la conciliación. No se suben archivos al asistente de este módulo.
+   Odoo y realizar la conciliación. El XLSX de plantilla define la presentación;
+   sus importes existentes no sustituyen los datos bancarios de Odoo.
 2. Abrir **Generar conciliación**, seleccionar empresa, año, mes de corte y una
    o varias cuentas contables bancarias habilitadas (o todas). El resultado muestra
    la cuenta contable y los diarios incluidos. La configuración de diarios decide
@@ -79,8 +80,10 @@ al formato de la empresa sin cambiar la identificación interna de los conceptos
    tener un concepto único o una distribución de importes positivos. El resto
    no distribuido queda visible como pendiente. No se modifican importes contables.
 5. Generar una nueva versión y descargar los XLSX. Varias cuentas se entregan
-   en un ZIP. Cada archivo contiene **Conciliación**, **Movimientos** y
-   **Partidas conciliatorias**, con enlaces a sus registros originales en Odoo.
+   en un ZIP. Con plantilla se conservan los nombres de las hojas Banco y Data
+   y las hojas manuales adicionales; se añaden **Partidas conciliatorias** y
+   **Control Odoo**. Sin plantilla se utiliza el diseño incorporado con **Banco**,
+   **Data** y **Partidas conciliatorias**, con el control debajo del formulario.
 6. Opcionalmente, **Conservar cierre** cuando no queden pendientes de revisión.
    Esto conserva la versión; no publica asientos, no concilia movimientos y no
    modifica las fechas de bloqueo contable de Odoo.
@@ -90,6 +93,51 @@ fuente no cambia un resultado anterior. Una nueva versión usa las fuentes
 vigentes; no reconstruye registros eliminados ni el estado de conocimiento
 anterior a una modificación retroactiva. El XLSX se exporta desde el resultado
 conservado, no consultando otra vez los movimientos.
+
+## Plantillas XLSX y datos manuales
+
+En **Contabilidad → Conciliación cuadrática → Plantillas XLSX**, un administrador
+de Contabilidad puede cargar el archivo una vez, asociado a empresa y cuenta
+contable bancaria. El asistente elige la plantilla activa de esa cuenta por
+prioridad; para una sola cuenta se puede seleccionar una plantilla específica.
+Varias cuentas en el mismo ZIP usan cada una su propia plantilla.
+
+Se admite la estructura de los formatos proporcionados en GTQ y USD: saldo
+inicial en C19, meses en la fila 18 con dos columnas por mes (F:AC), totales
+en AD:AE y tabla Data con encabezados en la fila 7. Los nombres de las hojas
+pueden variar. No es un importador universal de cualquier diseño Excel; se
+valida la estructura al guardar. Se permiten archivos XLSX de hasta 8 MB,
+sin macros ni vínculos a otros libros.
+
+- Se conservan colores, fuentes, anchos, rótulos de contrapartes/bancos y notas
+  fuera del área financiera. Las hojas manuales adicionales se mantienen.
+- Se sustituyen la cabecera de identidad con los datos disponibles de Odoo,
+  el cuadro financiero entre saldo inicial y el segundo saldo conciliado,
+  la tabla de movimientos y los controles bancarios del formato. **Los importes
+  y fórmulas previos de estas áreas no se incorporan como ajustes manuales**.
+  Las hojas Partidas conciliatorias y Control Odoo son salidas reservadas.
+- Si Odoo no identifica el banco o el número de cuenta de cabecera, se conserva
+  el texto de la plantilla y se documenta ese origen en Control Odoo. La falta
+  de configuración continúa visible como pendiente; no cambia la contabilidad.
+- Los desgloses solo asignan importes a un rótulo manual cuando coincide una
+  cuenta conocida o un nombre identificable sin ambigüedad. Un banco desconocido
+  no se adivina por descripción. Las filas sin correspondencia quedan en cero;
+  se agregan filas para las contrapartes nuevas o no identificadas.
+- Se agregan filas cuando el detalle no cabe, actualizando fórmulas y referencias
+  A1 directas a las filas del formulario. Los ajustes manuales y fórmulas libres
+  en hojas adicionales se conservan, pero no alimentan los totales de Odoo.
+- Enero toma la apertura respaldada por extractos; febrero a diciembre muestran
+  el cierre del mes anterior como saldo inicial, incluso en meses sin movimientos.
+  Los meses posteriores al corte quedan vacíos. Sin respaldo se muestra `n.d.`.
+- Se conserva la convención del formato **A = apertura + depósitos** y
+  **saldo bancario = A − B**. El total anual A usa la apertura de enero una sola
+  vez. El saldo conciliado de libros se calcula desde libros independientemente.
+
+Cada resultado conserva su propia copia de plantilla, nombre y huella SHA-256.
+Modificar la plantilla afecta a nuevos resultados, incluso si el anterior aún
+no se había descargado. El archivo descargado sigue siendo editable; las
+ediciones de Excel no se importan a Odoo. Los ajustes manuales integrados a la
+conciliación requieren definir sus celdas y reglas en una versión posterior.
 
 ## Criterio de cálculo
 
@@ -193,7 +241,7 @@ odoo-bin -d cq_test -i l10n_us,l10n_gt_conciliacion_cuadratica \
 ```
 
 `l10n_us` se usa solo para los fixtures contables de las pruebas comunes de Odoo;
-no es una dependencia del módulo. GitHub Actions instala el módulo en Odoo 19
+también es una dependencia del módulo para las plantillas. GitHub Actions instala el módulo en Odoo 19
 con PostgreSQL 16 y ejecuta las pruebas de integración y de exportación.
 
 ## Actualización desde versiones anteriores
@@ -218,3 +266,8 @@ seguridad existentes. Los pendientes de contacto se resuelven revisando la relac
 en el documento original y la configuración de acceso; después se genera una nueva
 versión del reporte. No es necesario activar compañías ajenas para poder exportar
 un borrador con los importes de la compañía seleccionada.
+
+La versión 19.0.1.2.0 incorpora plantillas XLSX por empresa/cuenta y el diseño
+mensual del formato de referencia. Instalar la nueva dependencia `openpyxl`
+(incluida en `requirements.txt`) antes de actualizar el módulo. Cargar la plantilla
+y generar una nueva versión; los archivos ya descargados se conservan.
