@@ -142,14 +142,21 @@ def merge_manual_details(groups, slots, bank_only):
     """
     remaining = list(groups)
     result = []
+
+    def account_key(value):
+        if normalized(value) in ("", "cuentanoidentificada", "nd") or any(char in value for char in "*•…"):
+            return ""
+        return re.sub(r"[\s-]+", "", value).upper()
+
+    unknown_names = {"banconoidentificado", "contrapartenoidentificada", "contactorestringido"}
     for slot in slots:
         label = slot["label"]
         candidates = []
-        account = normalized(label[-1])
+        account = account_key(label[-1])
         if account:
-            candidates = [idx for idx, (key, _) in enumerate(remaining) if normalized(key[-1]) == account]
-        elif label[0]:
-            candidates = [idx for idx, (key, _) in enumerate(remaining) if normalized(key[0]) == normalized(label[0]) and not key[0].endswith("no identificado") and not key[0].endswith("no identificada")]
+            candidates = [idx for idx, (key, _) in enumerate(remaining) if account_key(key[-1]) == account]
+        elif label[0] and not label[-1].strip():
+            candidates = [idx for idx, (key, _) in enumerate(remaining) if normalized(key[0]) == normalized(label[0]) and normalized(key[0]) not in unknown_names]
         if len(candidates) == 1:
             actual, values = remaining.pop(candidates[0])
             # Actual source names win; manual text supplies missing identity

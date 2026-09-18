@@ -43,6 +43,20 @@ def row_for(sheet, label, last=False):
 
 
 class TestTemplate(unittest.TestCase):
+    def test_missing_or_masked_account_does_not_identify_a_manual_bank(self):
+        for manual_account, source_account in (("Cuenta no identificada", ""), ("***1234", "1234")):
+            with self.subTest(manual_account=manual_account):
+                template = template_workbook()
+                template["Banco"]["C36"], template["Banco"]["D36"] = "Banco escrito a mano", manual_account
+                data = full_fixture()
+                data["movements"] = [movement(1, "2024-01-05", 400, "IN_TRANSFER")]
+                data["movements"][0]["counterparty_account"] = source_account
+                output = export_xlsx(build_snapshot(data), template=saved(template))
+                sheet = openpyxl.load_workbook(BytesIO(output), data_only=True)["Banco"]
+                self.assertEqual(sheet["F36"].value, 0)
+                self.assertEqual(sheet["G34"].value, 400)
+                self.assertTrue(any(cell.value == "Banco no identificado" for row in sheet for cell in row))
+
     def test_usd_variant_keeps_data_header_on_row_eight(self):
         template = template_workbook()
         template["Data"].insert_rows(7)
