@@ -241,7 +241,8 @@ odoo-bin -d cq_test -i l10n_us,l10n_gt_conciliacion_cuadratica \
 ```
 
 `l10n_us` se usa solo para los fixtures contables de las pruebas comunes de Odoo;
-también es una dependencia del módulo para las plantillas. GitHub Actions instala el módulo en Odoo 19
+no es una dependencia del módulo. `openpyxl` sí es necesario para las plantillas.
+GitHub Actions instala el módulo en Odoo 19
 con PostgreSQL 16 y ejecuta las pruebas de integración y de exportación.
 
 ## Actualización desde versiones anteriores

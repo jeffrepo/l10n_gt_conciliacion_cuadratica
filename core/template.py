@@ -14,7 +14,6 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.formula import Tokenizer
-from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table
 
 from .calculation import MONTHS
