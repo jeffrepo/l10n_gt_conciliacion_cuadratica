@@ -163,7 +163,8 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         return key
 
     metric("bank_opening", "SALDO INICIAL SEGÚN BANCO", annual="first")
-    add("in_heading", "DEPÓSITOS", code="( + )", style="section")
+    add("in_heading", "DEPÓSITOS", [month["income"] for month in months], code="( + )", style="section",
+        formula=lambda col: "=SUM(%s)" % ",".join(cell(key, col) for key in income_keys))
     concept("IN_CUSTOMERS_LOCAL", "Cuentas por cobrar clientes locales")
     concept("IN_CUSTOMERS_FOREIGN", "Cuentas por cobrar clientes del exterior")
     concept("IN_RELATED", "Cuentas y documentos por cobrar relacionadas locales y del exterior (detallar)", 2, person_label="Empresa")
@@ -293,6 +294,8 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         "A incluye saldo inicial + depósitos. TOTALES: apertura de enero + ingresos acumulados; saldos al último mes incluido. n.d.: falta respaldo bancario.",
         "Generado: %s · %s" % (meta["generated_at"], meta["generated_by"]),
     ]
+    if "accounting_movements" in snapshot:
+        notes.append("Fuentes del período: %s transacciones bancarias · %s apuntes de la cuenta bancaria. Consulte Mayor bancario Odoo y Resumen contable Odoo; sus importes no sustituyen los extractos." % (len(snapshot["movements"]), len(snapshot["accounting_movements"])))
     for note in notes:
         merge(row, 2, 31, note, "warn" if "pendientes de revisión" in note and snapshot["issues"] else "label")
         sheet.set_row(row - 1, 24)

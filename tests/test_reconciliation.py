@@ -308,6 +308,117 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertEqual(report.month_ids.difference, -10)
         self.assertIn("book_difference", report.issue_ids.mapped("code"))
 
+    def _customer_payment(self, amount=100, when="2024-01-15", direct=False):
+        self.company.partner_id.country_id = self.env.ref("base.gt")
+        self.partner_a.country_id = self.env.ref("base.gt")
+        method = self.bank.inbound_payment_method_line_ids[:1]
+        if direct:
+            method.payment_account_id = self.bank.default_account_id
+        payment = self.env["account.payment"].create({
+            "journal_id": self.bank.id, "date": when, "amount": amount,
+            "payment_type": "inbound", "partner_type": "customer", "partner_id": self.partner_a.id,
+            "payment_method_line_id": method.id,
+        })
+        payment.action_post()
+        return payment
+
+    def test_direct_payments_and_manual_entries_without_statements(self):
+        payment = self._customer_payment(direct=True)
+        self._related_journal("CQONE")
+        self._related_journal("CQTWO")
+        opening = self.env["account.move"].create({
+            "journal_id": self.company_data["default_journal_misc"].id, "date": "2023-12-31",
+            "line_ids": [
+                Command.create({"account_id": self.bank.default_account_id.id, "debit": 500}),
+                Command.create({"account_id": self.company_data["default_account_revenue"].id, "credit": 500}),
+            ],
+        })
+        opening.action_post()
+        # Draft and future entries never enter the snapshot.
+        draft = opening.copy({"date": "2024-01-10"})
+        future = opening.copy({"date": "2024-03-10"})
+        future.action_post()
+        report = self._report(2)
+        self.assertEqual(report.payload["movements"], [])
+        self.assertEqual(len(report.payload["accounting_movements"]), 1)
+        row = report.payload["accounting_movements"][0]
+        self.assertEqual(row["move_id"], payment.move_id.id)
+        self.assertEqual(row["amount"], 100)
+        self.assertEqual(row["concept_code"], "IN_CUSTOMERS_LOCAL")
+        january, february = report.payload["accounting_months"]
+        self.assertEqual((january["opening"], january["income"], january["closing"]), (500, 100, 600))
+        self.assertEqual((february["opening"], february["income"], february["closing"]), (600, 0, 600))
+        self.assertTrue(all(month["bank_opening"] is None for month in report.payload["months"]))
+        self.assertIn("bank_transactions_missing", report.issue_ids.mapped("code"))
+        lines = self.env["account.move.line"].search(report.action_accounting_lines()["domain"])
+        self.assertEqual(lines, payment.move_id.line_ids.filtered(lambda aml: aml.account_id == self.bank.default_account_id))
+        self.assertNotIn(draft.id, [row["move_id"] for row in report.payload["accounting_movements"]])
+        workbook = load_workbook(BytesIO(report._xlsx_bytes()), data_only=True)
+        self.assertEqual(workbook["Resumen contable Odoo"]["B6"].value, 100)
+        self.assertEqual(workbook["Mayor bancario Odoo"]["I6"].value, 600)
+        self.assertEqual(workbook["Banco"]["G19"].value, "n.d.")
+        with self.assertRaises(UserError):
+            report.action_confirm()
+
+    def test_customer_country_and_related_rule_precede_automatic_classification(self):
+        self._customer_payment(direct=True)
+        self.partner_a.country_id = self.env.ref("base.us")
+        self.assertEqual(self._report().payload["accounting_movements"][0]["concept_code"], "IN_CUSTOMERS_FOREIGN")
+        self.env["cq.rule"].create({
+            "name": "Related customer", "company_id": self.company.id,
+            "concept_id": self.env.ref("l10n_gt_conciliacion_cuadratica.concept_in_related").id,
+            "partner_ids": [Command.set(self.partner_a.ids)],
+        })
+        row = self._report().payload["accounting_movements"][0]
+        self.assertEqual((row["concept_code"], row["classification_origin"]), ("IN_RELATED", "rule"))
+
+    def test_unknown_country_and_conflicting_rules_are_not_auto_classified(self):
+        self._customer_payment(direct=True)
+        self.partner_a.country_id = False
+        self.assertEqual(self._report().payload["accounting_movements"][0]["concept_code"], "")
+        self.partner_a.country_id = self.env.ref("base.gt")
+        for code in ("concept_in_related", "concept_in_customers_local"):
+            self.env["cq.rule"].create({
+                "name": code, "company_id": self.company.id,
+                "concept_id": self.env.ref("l10n_gt_conciliacion_cuadratica." + code).id,
+                "partner_ids": [Command.set(self.partner_a.ids)], "sequence": 10,
+            })
+        self.assertEqual(self._report().payload["accounting_movements"][0]["concept_code"], "")
+
+    def test_customer_bank_receipt_needs_complete_reconciliation_at_cutoff(self):
+        self._customer_payment(amount=60)
+        _, source = self._statement("2024-01-20", 100, 0, 100, "2024-01-31", classified=False)
+        counterpart = source.move_id.line_ids.filtered(lambda aml: aml.account_id == self.bank.suspense_account_id)
+        counterpart.account_id = self.incoming
+        other = self.env["account.move.line"].search([("account_id", "=", self.incoming.id), ("debit", ">", 0), ("company_id", "=", self.company.id)])
+        (counterpart | other).reconcile()
+        self.assertEqual(self._report().unclassified_count, 1)
+        later_payment = self._customer_payment(amount=40, when="2024-02-03")
+        later_line = later_payment.move_id.line_ids.filtered(lambda aml: aml.account_id == self.incoming)
+        (counterpart | later_line).reconcile()
+        self.assertEqual(self._report().unclassified_count, 1)
+        february = self._report(2)
+        self.assertEqual(february.unclassified_count, 0)
+        allocation = february.payload["movements"][0]["allocations"][0]
+        self.assertEqual((allocation["code"], allocation["origin"]), ("IN_CUSTOMERS_LOCAL", "reconciliation"))
+        self.assertEqual(february.payload["accounting_months"][0]["income"], 100)
+
+    def test_mixed_receipt_does_not_classify_whole_amount_as_customer(self):
+        self.company.partner_id.country_id = self.env.ref("base.gt")
+        self.partner_a.country_id = self.env.ref("base.gt")
+        move = self.env["account.move"].create({
+            "journal_id": self.company_data["default_journal_misc"].id, "date": "2024-01-20",
+            "line_ids": [
+                Command.create({"account_id": self.bank.default_account_id.id, "debit": 100, "partner_id": self.partner_a.id}),
+                Command.create({"account_id": self.partner_a.property_account_receivable_id.id, "credit": 80, "partner_id": self.partner_a.id}),
+                Command.create({"account_id": self.company_data["default_account_revenue"].id, "credit": 20}),
+            ],
+        })
+        move.action_post()
+        row = self._report().payload["accounting_movements"][0]
+        self.assertEqual(row["amount"], 100)
+        self.assertEqual(row["concept_code"], "")
+
     def test_opening_respects_odoo_statement_sequence(self):
         self._statement("2024-01-10", 100, 20, 120, "2024-01-31")
         # A later-created line can precede the opening anchor on the same date

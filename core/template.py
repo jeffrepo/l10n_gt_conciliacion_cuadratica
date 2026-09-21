@@ -379,6 +379,28 @@ def fill_template(profile, generated, layout, snapshot):
         pending.column_dimensions[col] = copy(dimension)
     pending.freeze_panes = "A2"
     pending.auto_filter.ref = source_book["Partidas conciliatorias"].auto_filter.ref
+    for name in ("Mayor bancario Odoo", "Resumen contable Odoo"):
+        if name not in source_book.sheetnames:
+            continue
+        if name in book.sheetnames:
+            del book[name]
+        source_sheet = source_book[name]
+        target_sheet = book.create_sheet(name)
+        for row in source_sheet:
+            for cell in row:
+                _copy_cell(cell, target_sheet.cell(cell.row, cell.column))
+        for merged in source_sheet.merged_cells.ranges:
+            target_sheet.merge_cells(str(merged))
+        for col, dimension in source_sheet.column_dimensions.items():
+            target_sheet.column_dimensions[col] = copy(dimension)
+        for row, dimension in source_sheet.row_dimensions.items():
+            target_sheet.row_dimensions[row] = copy(dimension)
+        target_sheet.freeze_panes = source_sheet.freeze_panes
+        target_sheet.auto_filter.ref = source_sheet.auto_filter.ref
+        target_sheet.sheet_properties = copy(source_sheet.sheet_properties)
+        target_sheet.sheet_view.showGridLines = False
+        target_sheet.page_setup = copy(source_sheet.page_setup)
+        target_sheet.print_title_rows = source_sheet.print_title_rows
     control = book.create_sheet("Control Odoo")
     for row in source_main.iter_rows(min_row=new_end + 1):
         for source in row:

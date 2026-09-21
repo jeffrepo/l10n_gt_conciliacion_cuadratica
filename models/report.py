@@ -115,6 +115,17 @@ class QuadraticReport(models.Model):
         action["domain"] = [("id", "in", [row["source_id"] for row in self.payload["movements"]])]
         return action
 
+    def action_accounting_lines(self):
+        self.ensure_one()
+        self.check_access("read")
+        return {
+            "type": "ir.actions.act_window", "name": _("Apuntes de la cuenta bancaria"),
+            "res_model": "account.move.line", "view_mode": "list,form",
+            "domain": [("company_id", "=", self.company_id.id),
+                       ("id", "in", [row["source_id"] for row in self.payload.get("accounting_movements", [])])],
+            "context": {"create": False},
+        }
+
 
 class QuadraticMonth(models.Model):
     _name = "cq.report.month"

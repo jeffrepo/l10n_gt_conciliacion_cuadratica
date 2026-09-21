@@ -260,6 +260,10 @@ class QuadraticExtraction(models.Model):
                                    "message": "Movimiento %s: dos reglas con la misma prioridad proponen conceptos distintos." % line.move_id.name})
                 if rule and not currency.is_zero(line.amount):
                     allocations = [{"code": rule["concept_code"], "amount": abs(line.amount), "origin": "rule", "rule_id": rule["id"]}]
+                elif not ambiguous and line.amount > 0:
+                    code = self._customer_receipt_code(line.move_id, account, outstanding, company, partner_data, cutoff)
+                    if code in {concept.code for concept in concepts if concept.active}:
+                        allocations = [{"code": code, "amount": line.amount, "origin": "reconciliation"}]
             partner_banks = []
             if partner_data["commercial_id"]:
                 for bank in payments.partner_bank_id:
@@ -282,6 +286,51 @@ class QuadraticExtraction(models.Model):
                 "counterparty_bank": identified_bank.get("name", ""),
                 "note": line.cq_note or "", "allocations": allocations,
             })
+        accounting_movements = []
+        ledger_by_id = {row["source_id"]: row for row in ledger if row["role"] == "bank"}
+        movements_by_move = {row["move_id"]: row for row in movements}
+        active_codes = {concept.code for concept in concepts if concept.active}
+        for line in ledger_lines.filtered(lambda aml: aml.account_id == account and aml.date >= start):
+            if line.id not in ledger_by_id:
+                continue  # Currency conversion was not backed by this entry.
+            row = dict(ledger_by_id[line.id])
+            payment = line.move_id.origin_payment_id
+            counterpart = line.move_id.line_ids.filtered(lambda aml: aml.account_id != account)
+            partners = counterpart.partner_id
+            partner = line.partner_id or payment.partner_id or (partners if len(partners) == 1 else self.env["res.partner"])
+            details = contact_info(partner, line.move_id.name)
+            scope = "unknown"
+            if details["country_id"] and company.country_id:
+                scope = "local" if details["country_id"] == company.country_id.id else "foreign"
+            bank_movement = movements_by_move.get(line.move_id.id)
+            code, origin = "", "pending"
+            if bank_movement:
+                # Reuse an already classified transaction only if it represents
+                # this exact ledger amount and has a single full concept.
+                allocations = bank_movement["allocations"]
+                codes = {item["code"] for item in allocations}
+                if len(codes) == 1 and currency.compare_amounts(sum(item["amount"] for item in allocations), abs(row["amount"])) == 0:
+                    code, origin = allocations[0]["code"], allocations[0]["origin"]
+            else:
+                rule, ambiguous = choose_rule(
+                    [rule for rule in rule_data if not rule["journal_id"] or rule["journal_id"] == line.journal_id.id],
+                    "in" if row["amount"] >= 0 else "out", details["partner_id"], scope,
+                    counterpart.account_id.ids, payment.mapped("payment_method_code"), line.name or line.move_id.ref or "",
+                )
+                if rule:
+                    code, origin = rule["concept_code"], "rule"
+                elif not ambiguous and row["amount"] > 0:
+                    automatic = self._customer_receipt_code(line.move_id, account, outstanding, company, details, cutoff)
+                    if automatic in active_codes:
+                        code, origin = automatic, "reconciliation"
+            row.update({"partner": details["name"], "reference": line.move_id.ref or "",
+                        "concept_code": code, "classification_origin": origin,
+                        "statement_line_id": line.statement_line_id.id,
+                        "counterpart_accounts": ", ".join(counterpart.account_id.mapped("display_name"))})
+            accounting_movements.append(row)
+        if not movements and accounting_movements:
+            issues.append({"code": "bank_transactions_missing", "message": _(
+                "No se encontraron transacciones bancarias publicadas entre %s y %s en los diarios incluidos. Sí hay %s apuntes publicados en la cuenta contable: consulte Mayor bancario Odoo y Resumen contable Odoo. Pagos, cobros y asientos no son extractos; sus saldos no sustituyen el saldo según banco.", start, cutoff, len(accounting_movements))})
         account_types = set(journals.mapped("cq_account_type"))
         account_type = dict(journals._fields["cq_account_type"].selection).get(next(iter(account_types)), "") if len(account_types) == 1 else ""
         return {
@@ -302,8 +351,46 @@ class QuadraticExtraction(models.Model):
             "bank_opening": opening, "controls": controls, "ledger": ledger,
             "concepts": [{"code": item.code, "report_code": item.report_code or "", "name": item.name, "direction": item.direction,
                           "sequence": item.sequence, "detail": item.detail} for item in concepts],
-            "movements": movements, "issues": issues,
+            "movements": movements, "accounting_movements": accounting_movements, "issues": issues,
         }
+
+    def _customer_receipt_code(self, move, bank_account, outstanding, company, partner_data, cutoff):
+        """Only pure customer receipts; explicit rules always take precedence.
+
+        A clearing line must be fully matched at the cutoff to posted customer
+        receipts. Mixed fees, refunds, partial matches, unknown countries and
+        restricted/different counterparties stay for explicit classification.
+        """
+        if not partner_data["commercial_id"] or not partner_data["country_id"] or not company.country_id:
+            return None
+        cache = {}
+
+        def receivable_lines(lines):
+            return bool(lines) and all(
+                aml.account_id.account_type == "asset_receivable" and aml.balance < 0
+                and self._partner_info(aml.partner_id, cache)["commercial_id"] == partner_data["commercial_id"]
+                for aml in lines
+            )
+
+        counterpart = move.line_ids.filtered(lambda aml: aml.account_id != bank_account and not company.currency_id.is_zero(aml.balance))
+        if not counterpart:
+            return None
+        for aml in counterpart:
+            if receivable_lines(aml):
+                continue
+            if aml.account_id not in outstanding or aml.balance >= 0:
+                return None
+            partials = aml.matched_debit_ids.filtered(lambda partial: partial.max_date <= cutoff and partial.debit_move_id.move_id.state == "posted")
+            if company.currency_id.compare_amounts(sum(partials.mapped("amount")), -aml.balance):
+                return None
+            for receipt in partials.debit_move_id.move_id:
+                payment = receipt.origin_payment_id
+                if not payment or payment.payment_type != "inbound" or payment.partner_type != "customer":
+                    return None
+                other = receipt.line_ids.filtered(lambda item: item.account_id != aml.account_id and not company.currency_id.is_zero(item.balance))
+                if not receivable_lines(other):
+                    return None
+        return "IN_CUSTOMERS_LOCAL" if partner_data["country_id"] == company.country_id.id else "IN_CUSTOMERS_FOREIGN"
 
     def _partner_info(self, partner, cache):
         """Read optional contact data with the report user's real permissions.

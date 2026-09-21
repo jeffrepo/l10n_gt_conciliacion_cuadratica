@@ -207,9 +207,33 @@ def build_snapshot(data):
             "concept_totals": {key: float(money(value, rounding)) for key, value in totals.items()},
         })
         bank_opening = bank_end
-    return {
+    result = {
         "schema_version": 1, "year": year, "month": last_month,
         "metadata": data["metadata"], "concepts": data["concepts"],
         "rounding": str(rounding), "months": months, "movements": movements,
         "pending": pending, "issues": issues,
     }
+    if "accounting_movements" in data:
+        # An independent ledger view, never added to the bank transactions.
+        # It includes posted payments and manual entries even without imports.
+        accounting = [dict(row) for row in data["accounting_movements"] if start <= row["date"] <= end]
+        balance = sum((decimal(row["amount"]) for row in data["ledger"] if row["role"] == "bank" and row["date"] < start), Decimal("0"))
+        accounting_months = []
+        for month in months:
+            opening = balance
+            rows = [row for row in accounting if int(row["date"][5:7]) == month["number"]]
+            totals = {}
+            for row in rows:
+                balance += decimal(row["amount"])
+                row["running_balance"] = float(money(balance, rounding))
+                code = row.get("concept_code") or ("unclassified_in" if row["amount"] >= 0 else "unclassified_out")
+                totals[code] = totals.get(code, Decimal("0")) + abs(decimal(row["amount"]))
+            accounting_months.append({
+                "number": month["number"], "name": month["name"], "opening": float(money(opening, rounding)),
+                "income": float(money(sum((max(decimal(row["amount"]), 0) for row in rows), Decimal("0")), rounding)),
+                "expense": float(money(sum((max(-decimal(row["amount"]), 0) for row in rows), Decimal("0")), rounding)),
+                "closing": float(money(balance, rounding)),
+                "concept_totals": {code: float(money(amount, rounding)) for code, amount in totals.items()},
+            })
+        result.update(accounting_movements=accounting, accounting_months=accounting_months)
+    return result

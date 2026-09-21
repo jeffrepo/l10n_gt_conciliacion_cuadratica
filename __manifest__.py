@@ -2,7 +2,7 @@
     "name": "Conciliación cuadrática Guatemala",
     "summary": "Conciliación mensual y XLSX por cuenta contable bancaria",
     "description": "Genera una conciliación cuadrática por compañía y cuenta contable bancaria, reuniendo sus diarios, extractos y partidas pendientes de Odoo. Incluye clasificación, versiones conservadas y exportación XLSX.",
-    "version": "19.0.1.2.0",
+    "version": "19.0.1.3.0",
     "category": "Accounting/Accounting",
     "author": "Silva technologies",
     "license": "LGPL-3",

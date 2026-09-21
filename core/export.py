@@ -40,6 +40,8 @@ def export_xlsx(snapshot, confirmed=False, template=None):
     layout = summary(main, snapshot, confirmed, fmt, profile)
     _movements(details, snapshot, fmt)
     _pending(pending, snapshot, fmt)
+    if "accounting_movements" in snapshot:
+        _accounting(book, snapshot, fmt)
     book.close()
     result = buffer.getvalue()
     if template:
@@ -85,7 +87,7 @@ def _movements(sheet, snapshot, fmt):
             company_value = company_remaining if last else money(decimal(movement["company_amount"]) * decimal(allocation["amount"]) / abs(decimal(movement["amount"])))
             company_remaining -= company_value
             code = allocation["code"]
-            origin = {"manual": "Manual", "rule": "Regla", "pending": "Pendiente"}.get(allocation["origin"], "")
+            origin = _origin(allocation["origin"])
             sheet.write_datetime(row, 3, date.fromisoformat(movement.get("accounting_date") or movement["date"]), fmt["date"])
             sheet.write_datetime(row, 11, date.fromisoformat(movement["date"]), fmt["date"])
             values = {
@@ -111,6 +113,89 @@ def _movements(sheet, snapshot, fmt):
             _link(sheet, row, 21, snapshot, "account.bank.statement.line", movement["source_id"])
             row += 1
     sheet.autofilter(6, 0, max(row - 1, 7), len(headers) - 1)
+
+
+def _origin(origin):
+    return {"manual": "Manual", "rule": "Regla", "pending": "Pendiente",
+            "reconciliation": "Contrapartida de cliente"}.get(origin, "")
+
+
+def _accounting(book, snapshot, fmt):
+    """Separate evidence from the GL; never represent it as a bank statement."""
+    summary = book.add_worksheet("Resumen contable Odoo")
+    detail = book.add_worksheet("Mayor bancario Odoo")
+    meta = snapshot["metadata"]
+    for sheet in (summary, detail):
+        sheet.hide_gridlines(2)
+        sheet.set_landscape()
+        sheet.fit_to_pages(1, 0)
+        sheet.merge_range("A1:M1", "MOVIMIENTOS SEGÚN LIBROS · %s · %s" % (meta["company"], meta["ledger_account"]), fmt["head"])
+        sheet.merge_range("A2:M2", "Fuente: apuntes publicados de la cuenta contable bancaria, incluidos pagos, cobros y asientos. No acredita saldos según banco.", fmt["warn"])
+        sheet.set_row(0, 30)
+        sheet.set_row(1, 32)
+    months = snapshot["accounting_months"]
+    summary.set_column(0, 0, 63)
+    summary.set_column(1, 13, 16)
+    summary.write_row(3, 0, ["Concepto (%s)" % meta["currency"]] + list(MONTHS) + ["TOTAL / SALDO AL CORTE"], fmt["head"])
+    summary.set_row(3, 32)
+    entries = [("opening", "SALDO INICIAL SEGÚN LIBROS (CUENTA BANCARIA)"),
+               ("income", "ENTRADAS / DÉBITOS CONTABLES"), ("expense", "SALIDAS / CRÉDITOS CONTABLES"),
+               ("closing", "SALDO FINAL SEGÚN LIBROS (CUENTA BANCARIA)")]
+    for idx, (key, label) in enumerate(entries, 4):
+        summary.write_string(idx, 0, label, fmt["concept"])
+        for col, month in enumerate(months, 1):
+            summary.write_number(idx, col, month[key], fmt["money"])
+        total = months[0][key] if key == "opening" else months[-1][key]
+        if key in ("income", "expense"):
+            total = float(sum((decimal(month[key]) for month in months), decimal(0)))
+        summary.write_number(idx, 13, total, fmt["total"])
+    row = 9
+    for direction, label in (("in", "DETALLE DE ENTRADAS CONTABLES"), ("out", "DETALLE DE SALIDAS CONTABLES")):
+        summary.merge_range(row, 0, row, 13, label, fmt["head"])
+        row += 1
+        concepts = [(item["code"], item["name"]) for item in snapshot["concepts"] if item["direction"] == direction]
+        concepts.append(("unclassified_" + direction, "Pendiente de clasificar / distribución en Data bancaria"))
+        for code, name in concepts:
+            summary.write_string(row, 0, name, fmt["concept"])
+            summary.set_row(row, 30 if len(name) > 58 else 18)
+            total = decimal(0)
+            for col, month in enumerate(months, 1):
+                amount = month["concept_totals"].get(code, 0)
+                total += decimal(amount)
+                summary.write_number(row, col, amount, fmt["money"])
+            summary.write_number(row, 13, float(total), fmt["total"])
+            row += 1
+    summary.freeze_panes(4, 1)
+    summary.print_area(0, 0, row - 1, 13)
+    summary.repeat_rows(0, 3)
+    headers = ["Fecha contable", "Documento", "Diario", "Contraparte", "Descripción", "Referencia",
+               "Entrada / débito", "Salida / crédito", "Saldo según libros", "Moneda", "Concepto", "Origen clasificación",
+               "Contrapartidas", "Transacción bancaria", "Importe moneda empresa", "Moneda empresa", "Odoo"]
+    detail.write_row(3, 0, headers, fmt["head"])
+    detail.set_row(3, 32)
+    detail.set_column(0, 0, 14)
+    detail.set_column(1, 5, 30)
+    detail.set_column(6, 9, 18)
+    detail.set_column(10, 13, 32)
+    detail.set_column(14, 16, 24)
+    detail.write_string(4, 4, "Saldo inicial según libros", fmt["concept"])
+    detail.write_number(4, 8, months[0]["opening"], fmt["money"])
+    names = {item["code"]: item["name"] for item in snapshot["concepts"]}
+    for row, item in enumerate(snapshot["accounting_movements"], 5):
+        detail.write_datetime(row, 0, date.fromisoformat(item["date"]), fmt["date"])
+        values = {1: item["document"], 2: item["journal"], 3: item["partner"], 4: item["description"],
+                  5: item["reference"], 9: meta["currency"], 10: names.get(item["concept_code"], "Pendiente de clasificar"),
+                  11: _origin(item["classification_origin"]), 12: item["counterpart_accounts"],
+                  13: "Sí" if item["statement_line_id"] else "Sin transacción bancaria vinculada", 15: meta["company_currency"]}
+        for col, value in values.items():
+            detail.write_string(row, col, value or "", fmt["text"])
+        for col, value in {6: max(item["amount"], 0), 7: max(-item["amount"], 0),
+                           8: item["running_balance"], 14: item["company_amount"]}.items():
+            detail.write_number(row, col, value, fmt["money"])
+        _link(detail, row, 16, snapshot, "account.move.line", item["source_id"])
+    detail.freeze_panes(5, 0)
+    detail.repeat_rows(0, 3)
+    detail.autofilter(3, 0, max(4, len(snapshot["accounting_movements"]) + 4), 16)
 
 
 def _pending(sheet, snapshot, fmt):

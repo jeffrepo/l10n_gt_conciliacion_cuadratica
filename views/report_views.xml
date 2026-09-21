@@ -12,6 +12,7 @@
             <header>
                 <button name="action_export" type="object" string="Exportar XLSX" class="oe_highlight"/>
                 <button name="action_movements" type="object" string="Revisar movimientos"/>
+                <button name="action_accounting_lines" type="object" string="Ver apuntes contables"/>
                 <button name="action_new_version" type="object" string="Generar nueva versión"/>
                 <button name="action_confirm" type="object" string="Conservar cierre" invisible="state == 'confirmed' or issue_count &gt; 0"/>
                 <field name="state" widget="statusbar"/>

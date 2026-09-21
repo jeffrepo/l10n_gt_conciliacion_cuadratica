@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.2.0`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.3.0`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
@@ -66,6 +66,41 @@ El campo **Código en Excel** permite adaptar los códigos breves de presentaci�
 al formato de la empresa sin cambiar la identificación interna de los conceptos.
 
 ## Operación mensual
+
+### Si se trabaja solo con pagos, cobros y asientos
+
+Cada nuevo XLSX incluye **Mayor bancario Odoo**, con todos los apuntes publicados
+de la cuenta bancaria, y **Resumen contable Odoo**, con apertura, entradas/débitos,
+salidas/créditos, cierre y clasificación por mes. Se incluyen todos los diarios
+que afecten esa cuenta, sin repetir apuntes por cada diario configurado. Los
+importes usan la moneda de la cuenta y el importe histórico disponible; no se
+reconstruyen monedas faltantes con el tipo de cambio actual.
+
+Estas dos hojas son salidas reservadas, también al usar una plantilla. No se
+suman a **Data**, que sigue representando transacciones bancarias. El resumen
+contable corresponde solo a la cuenta del banco; la sección de conciliación de
+libros también considera las cuentas pendientes y transitorias configuradas.
+**Ver apuntes contables** abre los documentos que respaldan el detalle.
+
+Si hay apuntes pero no transacciones bancarias en el período, se muestra un
+pendiente específico. Un saldo contable no acredita un saldo según banco:
+sin extractos, la apertura bancaria permanece `n.d.` y no se permite conservar
+el cierre. No es necesario cargar otro archivo para obtener el detalle contable.
+
+Después de las asignaciones manuales y las reglas, se identifican automáticamente
+los cobros cuya contrapartida es únicamente cuentas por cobrar de un cliente
+identificado, usando el país de su entidad comercial y el de la empresa para
+distinguir local/exterior. Para cobros bancarios mediante cuentas pendientes,
+se exige conciliación completa con pagos de cliente publicados al corte.
+Contactos o países desconocidos, cobros mixtos y reglas ambiguas requieren
+clasificación explícita. Las relacionadas se identifican mediante reglas por
+contacto o cuenta; no se deducen del nombre. Una distribución bancaria de varios
+conceptos se consulta en Data y queda sin concepto único en el mayor contable.
+
+La fila **DEPÓSITOS** muestra la suma mensual de ingresos bancarios, sin agregar
+la apertura. La fila A del formato conserva apertura más depósitos.
+
+### Generación y revisión
 
 1. Cargar los movimientos y estados de cuenta en el flujo bancario habitual de
    Odoo y realizar la conciliación. El XLSX de plantilla define la presentación;
@@ -272,3 +307,8 @@ La versión 19.0.1.2.0 incorpora plantillas XLSX por empresa/cuenta y el diseño
 mensual del formato de referencia. Instalar la nueva dependencia `openpyxl`
 (incluida en `requirements.txt`) antes de actualizar el módulo. Cargar la plantilla
 y generar una nueva versión; los archivos ya descargados se conservan.
+
+La versión 19.0.1.3.0 añade el mayor y resumen mensual de la cuenta contable aun
+sin transacciones bancarias, identificación conservadora de cobros de clientes
+y el total en la fila DEPÓSITOS. Actualizar el módulo y generar una nueva versión:
+los resultados anteriores no contienen el detalle contable adicional.
