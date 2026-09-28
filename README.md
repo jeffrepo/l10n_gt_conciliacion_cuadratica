@@ -201,13 +201,14 @@ sin macros ni vínculos a otros libros.
   de configuración continúa visible como pendiente; no cambia la contabilidad.
 - Los desgloses solo asignan importes a un rótulo manual cuando coincide una
   cuenta conocida o un nombre identificable sin ambigüedad. Un banco desconocido
-  no se adivina por descripción. Las filas sin correspondencia quedan en cero;
+  no se adivina por descripción. Con movimientos bancarios, las filas sin correspondencia quedan en cero;
   se agregan filas para las contrapartes nuevas o no identificadas.
 - Se agregan filas cuando el detalle no cabe, actualizando fórmulas y referencias
   A1 directas a las filas del formulario. Los ajustes manuales y fórmulas libres
   en hojas adicionales se conservan, pero no alimentan los totales de Odoo.
-- Enero toma la apertura respaldada por extractos; febrero a diciembre muestran
-  el cierre del mes anterior como saldo inicial, incluso en meses sin movimientos.
+- Con extractos, enero toma la apertura respaldada y febrero a diciembre muestran
+  el cierre calculado del mes anterior, incluso en meses sin movimientos. Las
+  capturas mensuales aportan saldos informados cuando falta ese respaldo.
   Los meses posteriores al corte quedan vacíos. Sin respaldo se muestra `n.d.`.
 - Se conserva la convención del formato **A = apertura + depósitos** y
   **saldo bancario = A − B**. El total anual A usa la apertura de enero una sola
@@ -225,17 +226,20 @@ Los importes se expresan en la moneda común de los diarios (o de la compañía 
 diario no define otra). Los saldos de bancos y los de libros se obtienen de
 fuentes separadas:
 
-- **Banco calculado:** saldo inicial respaldado por un extracto más entradas
-  menos salidas. No se reinicia con cada extracto para esconder saltos.
+- **Banco calculado:** saldo inicial respaldado por un extracto o captura más
+  entradas menos salidas bancarias. La captura sola no acredita los movimientos.
+  No se reinicia con cada extracto para esconder saltos.
 - **Control bancario:** comparación con `balance_end_real` del extracto que
   cubre el fin de mes. Los saldos reales deben haber sido cargados desde el banco;
   un saldo autocompletado por Odoo no prueba por sí solo una verificación externa.
+  Si falta ese extracto, se usa el cierre informado en la captura del mes y se
+  identifica su origen manual.
 - **Saldo según libros:** mayor de la cuenta bancaria + cuentas pendientes
   atribuibles al banco + cuenta transitoria atribuible al banco. Esta es la
   definición de libro de bancos utilizada para el flujo con cuentas pendientes;
   los tres componentes se muestran por separado.
-- **Banco ajustado:** banco calculado + depósitos en tránsito − cheques en
-  circulación − otros pagos pendientes.
+- **Banco ajustado:** banco calculado (o cierre informado cuando falta el cálculo)
+  + depósitos en tránsito − cheques en circulación − otros pagos pendientes.
 - **Libros ajustados:** saldo según libros menos el residual firmado de la
   transitoria. Cada ajuste tiene su apunte en Partidas conciliatorias; no se
   inventa una contrapartida para hacer coincidir los saldos.
@@ -294,7 +298,7 @@ Los importes faltantes se muestran como `n.d.` en el XLSX, no como un cero valid
   El país desconocido de un contacto restringido no lo clasifica como extranjero.
 - Un diario en USD necesita que sus apuntes de banco y pendientes conserven USD.
   Los apuntes que solo conservan otra moneda generan un pendiente de revisión.
-- Un mes sin extracto de control al cierre se puede exportar como borrador.
+- Un mes sin extracto ni captura de control al cierre se puede exportar como borrador.
   No se presume cobertura completa simplemente porque no haya movimientos.
 - Los números y bancos de contrapartes se muestran cuando están identificados
   en las fuentes; no se elige arbitrariamente una de sus cuentas bancarias.
@@ -364,3 +368,8 @@ el módulo: los resultados creados con 1.3.0 muestran sus importes sin recalcula
 la contabilidad. Para obtener el nuevo orden de hojas, generar una nueva versión
 si el archivo anterior ya estaba descargado. Las versiones anteriores a 1.3.0
 requieren una nueva generación para disponer del resumen contable.
+
+La versión 19.0.1.4.0 añade **Saldos según banco**. Actualizar el módulo, registrar
+las aperturas y cierres mensuales y generar una nueva versión del reporte.
+Los datos de capturas se incorporan únicamente a resultados nuevos; no se
+convierten saldos de ejemplo de las plantillas ni ceros antiguos en capturas.
