@@ -731,6 +731,7 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertIn("bank_flow_missing", report.issue_ids.mapped("code"))
         with self.assertRaises(UserError):
             report.action_confirm()
+        report.action_export()
         exported = report._xlsx_bytes()
         old_payload = deepcopy(report.payload)
         capture.closing_balance = 105
@@ -778,7 +779,7 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
 
     def test_manual_capture_rejects_duplicates_wrong_account_and_year(self):
         self._bank_capture()
-        with self.assertRaises((ValidationError, IntegrityError)), mute_logger("odoo.sql_db"), self.cr.savepoint():
+        with self.assertRaises(IntegrityError), mute_logger("odoo.sql_db"), self.cr.savepoint():
             self._bank_capture()
         with self.assertRaises(ValidationError), self.cr.savepoint():
             self._bank_capture(year=1899)
