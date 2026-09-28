@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.3.0`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.3.1`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
@@ -81,6 +81,15 @@ suman a **Data**, que sigue representando transacciones bancarias. El resumen
 contable corresponde solo a la cuenta del banco; la sección de conciliación de
 libros también considera las cuentas pendientes y transitorias configuradas.
 **Ver apuntes contables** abre los documentos que respaldan el detalle.
+
+Al abrir **Revisar resultados**, la primera pestaña es **Resumen contable**:
+apertura, ingresos/débitos, egresos/créditos y cierre por mes. Las columnas de
+cobros locales, del exterior y relacionadas se pueden activar en la lista.
+La pestaña **Conciliación bancaria** conserva los cálculos por extractos e
+identifica los saldos sin respaldo; esas celdas quedan vacías en lugar de
+mostrar un cero. Cuando no hay transacciones bancarias, el XLSX abre primero
+**Resumen contable Odoo**, seguido del mayor, también con una plantilla.
+El formulario bancario permanece disponible y conserva su formato.
 
 Si hay apuntes pero no transacciones bancarias en el período, se muestra un
 pendiente específico. Un saldo contable no acredita un saldo según banco:
@@ -312,3 +321,10 @@ La versión 19.0.1.3.0 añade el mayor y resumen mensual de la cuenta contable a
 sin transacciones bancarias, identificación conservadora de cobros de clientes
 y el total en la fila DEPÓSITOS. Actualizar el módulo y generar una nueva versión:
 los resultados anteriores no contienen el detalle contable adicional.
+
+La versión 19.0.1.3.1 muestra en pantalla el resumen contable ya conservado en
+el XLSX y abre esa hoja primero cuando no hay transacciones bancarias. Actualizar
+el módulo: los resultados creados con 1.3.0 muestran sus importes sin recalcular
+la contabilidad. Para obtener el nuevo orden de hojas, generar una nueva versión
+si el archivo anterior ya estaba descargado. Las versiones anteriores a 1.3.0
+requieren una nueva generación para disponer del resumen contable.

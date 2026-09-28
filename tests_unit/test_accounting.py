@@ -54,6 +54,8 @@ class TestAccounting(unittest.TestCase):
         for use_template in (None, saved(template)):
             with self.subTest(template=bool(use_template)):
                 book = load_workbook(BytesIO(export_xlsx(snapshot, template=use_template)), data_only=True)
+                self.assertEqual(book.sheetnames[:2], ["Resumen contable Odoo", "Mayor bancario Odoo"])
+                self.assertEqual(book.active.title, "Resumen contable Odoo")
                 self.assertEqual(book["Banco"]["G19"].value, "n.d.")
                 self.assertFalse(any(cell.value is not None for row in book["Data"].iter_rows(min_row=9) for cell in row))
                 summary = book["Resumen contable Odoo"]
@@ -71,6 +73,15 @@ class TestAccounting(unittest.TestCase):
                 if use_template:
                     self.assertEqual(book["Notas personales"]["A1"].value, "Mantener")
                 self.assertFalse(any(c.data_type == "e" for s in book for row in s for c in row))
+
+    def test_bank_transactions_keep_bank_sheet_first(self):
+        data = accounting_fixture()
+        data["movements"] = [movement(50, "2024-01-05", 400)]
+        for template in (None, saved(template_workbook())):
+            book = load_workbook(BytesIO(export_xlsx(build_snapshot(data), template=template)), data_only=True)
+            self.assertEqual(book.sheetnames[0], "Banco")
+            self.assertEqual(book["Resumen contable Odoo"]["B6"].value, 400)
+            self.assertEqual(book["Banco"]["G20"].value, 400)
 
     def test_monthly_deposit_heading_includes_unclassified_receipts_once(self):
         data = fixture()

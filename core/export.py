@@ -25,6 +25,9 @@ def export_xlsx(snapshot, confirmed=False, template=None):
     book = xlsxwriter.Workbook(buffer, {"in_memory": True, "strings_to_formulas": False, "strings_to_urls": False})
     book.set_properties({"title": "Conciliación cuadrática", "company": snapshot["metadata"]["company"]})
     fmt = reference_formats(book)
+    accounting_first = "accounting_movements" in snapshot and not snapshot["movements"]
+    if accounting_first:
+        _accounting(book, snapshot, fmt)
     main = book.add_worksheet("Banco")
     details = book.add_worksheet("Data")
     pending = book.add_worksheet("Partidas conciliatorias")
@@ -40,7 +43,7 @@ def export_xlsx(snapshot, confirmed=False, template=None):
     layout = summary(main, snapshot, confirmed, fmt, profile)
     _movements(details, snapshot, fmt)
     _pending(pending, snapshot, fmt)
-    if "accounting_movements" in snapshot:
+    if "accounting_movements" in snapshot and not accounting_first:
         _accounting(book, snapshot, fmt)
     book.close()
     result = buffer.getvalue()

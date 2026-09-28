@@ -414,6 +414,13 @@ def fill_template(profile, generated, layout, snapshot):
         control.cell(control.max_row + 2, 3, "Los datos bancarios de cabecera que faltan en Odoo se conservaron de la plantilla. No identifican por sí solos los bancos de las contrapartes.")
     for sheet in (main, data_sheet, pending, control):
         sheet.sheet_view.showGridLines = False
+    if source_book.sheetnames[0] == "Resumen contable Odoo":
+        for index, name in enumerate(("Resumen contable Odoo", "Mayor bancario Odoo")):
+            book.move_sheet(name, offset=index - book.index(book[name]))
+        book.active = book["Resumen contable Odoo"]
+        for sheet in book:
+            sheet.sheet_view.tabSelected = sheet == book.active
+        book.views[0].firstSheet = 0
     book.calculation.fullCalcOnLoad = True
     book.calculation.forceFullCalc = True
     output = BytesIO()

@@ -56,16 +56,31 @@ class QuadraticReport(models.Model):
     confirmed_at = fields.Datetime("Cierre conservado el")
     confirmed_by = fields.Many2one("res.users", string="Cierre conservado por")
     payload = fields.Json("Resultado", required=True)
+    has_accounting_summary = fields.Boolean(compute="_compute_available_sources")
+    has_bank_data = fields.Boolean(compute="_compute_available_sources")
+    has_bank_movements = fields.Boolean(compute="_compute_available_sources")
     issue_count = fields.Integer("Pendientes de revisión")
     unclassified_count = fields.Integer("Movimientos sin clasificar")
     difference = fields.Monetary("Diferencia al corte")
     month_ids = fields.One2many("cq.report.month", "report_id", string="Resumen mensual")
+    accounting_month_ids = fields.One2many("cq.report.month", "report_id", string="Resumen contable", readonly=True)
     issue_ids = fields.One2many("cq.report.issue", "report_id", string="Revisión")
     file_data = fields.Binary("Archivo XLSX", attachment=True)
     file_name = fields.Char("Nombre de archivo")
     template_id = fields.Many2one("cq.xlsx.template", string="Plantilla utilizada", check_company=True, ondelete="restrict")
     template_name = fields.Char("Nombre de plantilla conservada")
     template_data = fields.Binary("Plantilla conservada", attachment=True, copy=False)
+
+    @api.depends("payload")
+    def _compute_available_sources(self):
+        for report in self:
+            payload = report.payload or {}
+            report.has_accounting_summary = bool(payload.get("accounting_months"))
+            report.has_bank_movements = bool(payload.get("movements"))
+            report.has_bank_data = report.has_bank_movements or any(
+                month.get("bank_opening") is not None or month.get("statement_end") is not None
+                for month in payload.get("months", [])
+            )
 
     def action_confirm(self):
         self.check_access("write")
@@ -158,6 +173,47 @@ class QuadraticMonth(models.Model):
     book_adjustment = fields.Monetary("Ajustes identificados de libros")
     book_adjusted = fields.Monetary("Libros ajustados")
     difference = fields.Monetary("Diferencia conciliación")
+    accounting_available = fields.Boolean(compute="_compute_accounting_summary")
+    accounting_opening = fields.Monetary("Saldo inicial contable", compute="_compute_accounting_summary")
+    accounting_income = fields.Monetary("Ingresos / débitos contables", compute="_compute_accounting_summary")
+    accounting_expense = fields.Monetary("Egresos / créditos contables", compute="_compute_accounting_summary")
+    accounting_closing = fields.Monetary("Saldo final contable", compute="_compute_accounting_summary")
+    accounting_customers_local = fields.Monetary("Cobros de clientes locales", compute="_compute_accounting_summary")
+    accounting_customers_foreign = fields.Monetary("Cobros de clientes del exterior", compute="_compute_accounting_summary")
+    accounting_related = fields.Monetary("Cobros de relacionadas", compute="_compute_accounting_summary")
+    bank_source_status = fields.Char("Respaldo bancario", compute="_compute_bank_source_status")
+
+    @api.depends("report_id.payload", "number")
+    def _compute_accounting_summary(self):
+        # Read the conserved JSON rather than today's ledger. This also makes
+        # the summary visible on existing 1.3.0 reports without rewriting them.
+        summaries = {
+            report.id: {month["number"]: month for month in (report.payload or {}).get("accounting_months", [])}
+            for report in self.report_id
+        }
+        for month in self:
+            data = summaries.get(month.report_id.id, {}).get(month.number, {})
+            totals = data.get("concept_totals", {})
+            month.accounting_available = bool(data)
+            month.accounting_opening = data.get("opening", 0)
+            month.accounting_income = data.get("income", 0)
+            month.accounting_expense = data.get("expense", 0)
+            month.accounting_closing = data.get("closing", 0)
+            month.accounting_customers_local = totals.get("IN_CUSTOMERS_LOCAL", 0)
+            month.accounting_customers_foreign = totals.get("IN_CUSTOMERS_FOREIGN", 0)
+            month.accounting_related = totals.get("IN_RELATED", 0)
+
+    @api.depends("bank_available", "control_available")
+    def _compute_bank_source_status(self):
+        for month in self:
+            if not month.bank_available and not month.control_available:
+                month.bank_source_status = _("Sin saldos respaldados por extractos")
+            elif not month.bank_available:
+                month.bank_source_status = _("Falta apertura bancaria")
+            elif not month.control_available:
+                month.bank_source_status = _("Falta extracto de cierre")
+            else:
+                month.bank_source_status = _("Saldos disponibles")
 
 
 class QuadraticIssue(models.Model):

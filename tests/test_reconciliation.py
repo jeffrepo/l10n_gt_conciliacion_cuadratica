@@ -1,10 +1,12 @@
 import base64
+from copy import deepcopy
 from io import BytesIO
 
 from openpyxl import load_workbook
 
 from odoo import Command
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
+from odoo.addons.l10n_gt_conciliacion_cuadratica.models.report import INTERNAL
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import Form, tagged
 
@@ -348,6 +350,15 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         january, february = report.payload["accounting_months"]
         self.assertEqual((january["opening"], january["income"], january["closing"]), (500, 100, 600))
         self.assertEqual((february["opening"], february["income"], february["closing"]), (600, 0, 600))
+        self.assertTrue(report.has_accounting_summary)
+        self.assertFalse(report.has_bank_data)
+        self.assertFalse(report.has_bank_movements)
+        jan_ui, feb_ui = report.month_ids.sorted("number")
+        self.assertTrue(jan_ui.accounting_available)
+        self.assertEqual((jan_ui.accounting_opening, jan_ui.accounting_income, jan_ui.accounting_expense, jan_ui.accounting_closing), (500, 100, 0, 600))
+        self.assertEqual((feb_ui.accounting_opening, feb_ui.accounting_income, feb_ui.accounting_closing), (600, 0, 600))
+        self.assertEqual(jan_ui.accounting_customers_local, 100)
+        self.assertFalse(jan_ui.bank_available)
         self.assertTrue(all(month["bank_opening"] is None for month in report.payload["months"]))
         self.assertIn("bank_transactions_missing", report.issue_ids.mapped("code"))
         lines = self.env["account.move.line"].search(report.action_accounting_lines()["domain"])
@@ -357,8 +368,51 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertEqual(workbook["Resumen contable Odoo"]["B6"].value, 100)
         self.assertEqual(workbook["Mayor bancario Odoo"]["I6"].value, 600)
         self.assertEqual(workbook["Banco"]["G19"].value, "n.d.")
+        self.assertEqual(workbook.active.title, "Resumen contable Odoo")
         with self.assertRaises(UserError):
             report.action_confirm()
+
+    def test_ui_summary_reads_conserved_snapshot_not_current_books(self):
+        self._customer_payment(direct=True)
+        original = self._report()
+        payload = deepcopy(original.payload)
+        original.action_export()
+        exported = original.file_data
+        self._customer_payment(amount=25)
+        self.env.invalidate_all()
+        self.assertEqual(original.month_ids.accounting_income, 100)
+        self.assertEqual(original.month_ids.accounting_closing, 100)
+        self.assertEqual(original.payload, payload)
+        self.assertEqual(original.file_data, exported)
+        self.assertEqual(self._report().month_ids.accounting_income, 125)
+
+    def test_old_snapshot_without_accounting_summary_is_marked_unavailable(self):
+        self._customer_payment(direct=True)
+        report = self._report()
+        payload = deepcopy(report.payload)
+        del payload["accounting_months"]
+        del payload["accounting_movements"]
+        report.with_context(cq_internal=INTERNAL).write({"payload": payload})
+        self.assertFalse(report.has_accounting_summary)
+        self.assertFalse(report.month_ids.accounting_available)
+        self.assertFalse(report.has_bank_data)
+        self.assertEqual(report.payload, payload)
+
+    def test_ui_bank_sources_distinguish_real_zero_from_missing_opening(self):
+        _, line = self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        backed = self._report()
+        self.assertTrue(backed.has_bank_data)
+        self.assertTrue(backed.has_bank_movements)
+        self.assertTrue(backed.month_ids.bank_available)
+        self.assertTrue(backed.month_ids.control_available)
+        self.assertEqual(backed.month_ids.bank_opening, 0)
+        line.statement_id = False
+        missing = self._report()
+        self.assertTrue(missing.has_bank_data)  # Transactions still show 100.
+        self.assertFalse(missing.month_ids.bank_available)
+        self.assertFalse(missing.month_ids.control_available)
+        self.assertEqual(missing.month_ids.income, 100)
+        self.assertNotEqual(missing.month_ids.bank_source_status, backed.month_ids.bank_source_status)
 
     def test_customer_country_and_related_rule_precede_automatic_classification(self):
         self._customer_payment(direct=True)
