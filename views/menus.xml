@@ -1,5 +1,6 @@
 <odoo>
-    <menuitem id="menu_cq_root" name="Conciliación cuadrática" parent="account.menu_finance" sequence="65" groups="account.group_account_user"/>
+    <!-- Enterprise's accountant app relocates this native Accounting menu. -->
+    <menuitem id="menu_cq_root" name="Conciliación cuadrática" parent="account.menu_finance_entries" sequence="65" groups="account.group_account_user"/>
     <menuitem id="menu_cq_generate" name="Generar conciliación" parent="menu_cq_root" action="action_cq_generate" sequence="10"/>
     <menuitem id="menu_cq_reports" name="Resultados y cierres" parent="menu_cq_root" action="action_cq_reports" sequence="20"/>
     <menuitem id="menu_cq_movements" name="Clasificar movimientos" parent="menu_cq_root" action="action_cq_movements" sequence="30"/>

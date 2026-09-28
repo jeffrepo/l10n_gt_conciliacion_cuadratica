@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.0`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.1`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
@@ -14,6 +14,11 @@ contables comunes a Community y Enterprise. No depende de GDOMEX ni de `account_
 3. Actualizar la lista de aplicaciones e instalar **Conciliación cuadrática Guatemala**.
 4. Acceder con permisos de Contabilidad. La configuración de conceptos y reglas
    requiere permisos de administrador de Contabilidad.
+5. Dentro de la aplicación Contabilidad, abrir el menú superior **Contabilidad**
+   de Odoo. En **Conciliación cuadrática** se agrupan Generar conciliación,
+   Resultados y cierres, Clasificar movimientos, Cortes de extractos, Saldos según
+   banco, Plantillas XLSX y Configuración. Las rutas de este documento empiezan
+   en ese menú superior, una vez dentro de la aplicación.
 
 Ejemplo de instalación por consola:
 
@@ -373,3 +378,14 @@ La versión 19.0.1.4.0 añade **Saldos según banco**. Actualizar el módulo, re
 las aperturas y cierres mensuales y generar una nueva versión del reporte.
 Los datos de capturas se incorporan únicamente a resultados nuevos; no se
 convierten saldos de ejemplo de las plantillas ni ceros antiguos en capturas.
+
+La versión 19.0.1.4.1 reúne todas las opciones dentro del menú nativo
+**Contabilidad → Conciliación cuadrática** (`account.menu_finance_entries`).
+En Enterprise 19, `accountant` mueve este menú a la aplicación Contabilidad
+(`accountant.menu_accounting`). Vincularlo al menú nativo mantiene el grupo
+en esa aplicación sin añadir una dependencia exclusiva de Enterprise. La raíz
+anterior `account.menu_finance` pertenece a Facturación y puede aparecer como
+otra aplicación si un módulo le añade opciones.
+Actualizar el módulo desde Aplicaciones y recargar la página para renovar los
+menús. Se reutilizan los mismos registros de menú y se mantienen sus permisos.
+Subir el código al servidor sin actualizar el módulo no aplica este cambio.
