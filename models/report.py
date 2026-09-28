@@ -78,7 +78,7 @@ class QuadraticReport(models.Model):
             report.has_accounting_summary = bool(payload.get("accounting_months"))
             report.has_bank_movements = bool(payload.get("movements"))
             report.has_bank_data = report.has_bank_movements or any(
-                month.get("bank_opening") is not None or month.get("statement_end") is not None
+                month.get("reported_bank_opening", month.get("bank_opening")) is not None or month.get("statement_end") is not None
                 for month in payload.get("months", [])
             )
 
@@ -155,12 +155,12 @@ class QuadraticMonth(models.Model):
     name = fields.Char("Mes")
     cutoff = fields.Date("Fecha de corte")
     bank_available = fields.Boolean("Saldo inicial respaldado")
-    control_available = fields.Boolean("Extracto de cierre disponible")
+    control_available = fields.Boolean("Saldo final banco disponible")
     bank_opening = fields.Monetary("Saldo inicial banco")
     income = fields.Monetary("Ingresos")
     expense = fields.Monetary("Egresos")
     bank_end = fields.Monetary("Saldo calculado banco")
-    statement_end = fields.Monetary("Saldo extracto")
+    statement_end = fields.Monetary("Saldo final según banco")
     bank_difference = fields.Monetary("Diferencia extracto")
     deposits = fields.Monetary("Depósitos en tránsito")
     checks = fields.Monetary("Cheques en circulación")
@@ -182,6 +182,10 @@ class QuadraticMonth(models.Model):
     accounting_customers_foreign = fields.Monetary("Cobros de clientes del exterior", compute="_compute_accounting_summary")
     accounting_related = fields.Monetary("Cobros de relacionadas", compute="_compute_accounting_summary")
     bank_source_status = fields.Char("Respaldo bancario", compute="_compute_bank_source_status")
+    display_bank_opening = fields.Monetary("Saldo inicial según banco", compute="_compute_bank_source_status")
+    reported_opening_available = fields.Boolean(compute="_compute_bank_source_status")
+    bank_adjusted_available = fields.Boolean(compute="_compute_bank_source_status")
+    difference_available = fields.Boolean(compute="_compute_bank_source_status")
 
     @api.depends("report_id.payload", "number")
     def _compute_accounting_summary(self):
@@ -203,10 +207,22 @@ class QuadraticMonth(models.Model):
             month.accounting_customers_foreign = totals.get("IN_CUSTOMERS_FOREIGN", 0)
             month.accounting_related = totals.get("IN_RELATED", 0)
 
-    @api.depends("bank_available", "control_available")
+    @api.depends("bank_available", "control_available", "report_id.payload", "number")
     def _compute_bank_source_status(self):
         for month in self:
-            if not month.bank_available and not month.control_available:
+            data = next((row for row in (month.report_id.payload or {}).get("months", []) if row["number"] == month.number), {})
+            opening = data.get("reported_bank_opening", data.get("bank_opening"))
+            month.reported_opening_available = opening is not None
+            month.display_bank_opening = opening if opening is not None else 0
+            month.bank_adjusted_available = data.get("bank_adjusted") is not None
+            month.difference_available = data.get("difference") is not None
+            if (data.get("control") or {}).get("source_model") == "cq.bank.balance":
+                month.bank_source_status = _("Captura manual del estado de cuenta")
+            elif data.get("manual_balance") and month.control_available:
+                month.bank_source_status = _("Extracto de Odoo y captura manual")
+            elif data.get("manual_opening_used"):
+                month.bank_source_status = _("Apertura capturada; falta cierre")
+            elif not month.bank_available and not month.control_available:
                 month.bank_source_status = _("Sin saldos respaldados por extractos")
             elif not month.bank_available:
                 month.bank_source_status = _("Falta apertura bancaria")

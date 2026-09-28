@@ -162,7 +162,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
             add(code, name, amounts(code), code=concepts.get(code, {}).get("report_code", ""), style="detail", left=True)
         return key
 
-    metric("bank_opening", "SALDO INICIAL SEGÚN BANCO", annual="first")
+    add("bank_opening", "SALDO INICIAL SEGÚN BANCO", [month.get("reported_bank_opening", month["bank_opening"]) for month in months], annual="first")
     add("in_heading", "DEPÓSITOS", [month["income"] for month in months], code="( + )", style="section",
         formula=lambda col: "=SUM(%s)" % ",".join(cell(key, col) for key in income_keys))
     concept("IN_CUSTOMERS_LOCAL", "Cuentas por cobrar clientes locales")
@@ -195,12 +195,22 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     expense_keys = ["OUT_SUPPLIERS", "OUT_OPERATING", "OUT_ADVANCES", "OUT_LOANS", "OUT_DIVIDENDS", "OUT_SHAREHOLDERS", "OUT_RELATED_LOCAL", "OUT_RELATED_FOREIGN", "OUT_TRANSFER", other_out]
     metric("expense", "TOTAL EGRESOS", annual="sum", code="B", style="total_label", formula=lambda col: "=SUM(%s)" % ",".join(cell(key, col) for key in expense_keys))
     metric("bank_end", "SALDO FINAL BANCARIO ( A - B )", style="total_label", formula=lambda col: "=%s-%s" % (cell("available", col), cell("expense", col)))
+    has_manual_balances = any(month.get("manual_balance") for month in months)
+    if has_manual_balances:
+        add(
+            "reported_closing", "Saldo final según banco (extracto o captura)", [month["statement_end"] for month in months], annual="last")
     add("bank_adjustments", "AJUSTES")
     metric("deposits", "Depósitos en tránsito", code="( + )")
     metric("checks", "Cheques en circulación", code="( - )")
     add("other_bank", "Otros (especifique)", [-month["payments"] for month in months], annual="last")
     add("bank_note", "Otros pagos pendientes de cargo", style="detail")
-    metric("bank_adjusted", "SALDO CONCILIADO", style="total_label", formula=lambda col: "=%s+%s-%s+%s" % tuple(cell(key, col) for key in ("bank_end", "deposits", "checks", "other_bank")))
+    def adjusted_formula(col):
+        base = cell("bank_end", col)
+        if has_manual_balances:
+            base = "IF(ISNUMBER(%s),%s,%s)" % (base, base, cell("reported_closing", col))
+        return "=%s+%s-%s+%s" % (base, cell("deposits", col), cell("checks", col), cell("other_bank", col))
+
+    metric("bank_adjusted", "SALDO CONCILIADO", style="total_label", formula=adjusted_formula)
     add("spacer", "", style="label")
     metric("book_balance", "SALDO FINAL SEGÚN LIBROS")
     add("book_adjustments", "AJUSTES")
@@ -231,6 +241,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         else:
             sheet.write_number(row, col, value, fmt[style])
 
+    bank_flows_missing = not snapshot["movements"] and all(month["bank_end"] is None for month in months)
     for item in rows:
         row = item["row"] - 1
         if item.get("header"):
@@ -260,10 +271,16 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         if item["values"] is None:
             continue
         offset = 5 if item["left"] else 6
+        if bank_flows_missing and index["in_heading"] <= item["row"] < index["bank_end"]:
+            # Missing statements do not establish zero deposits/withdrawals.
+            for idx in range(len(months)):
+                put(row, offset + idx * 2, None, style)
+            put(row, 29 if item["left"] else 30, None, style)
+            continue
         for idx, value in enumerate(item["values"]):
             col = offset + idx * 2
             formula = item["formula"](col) if item["formula"] else None
-            if item["key"] == "bank_opening" and idx:
+            if item["key"] == "bank_opening" and idx and not months[idx].get("manual_opening_used"):
                 formula = "=" + cell("bank_end", col - 2)
             put(row, col, value, style, formula)
         annual_col = 29 if item["left"] else 30
@@ -300,19 +317,24 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         merge(row, 2, 31, note, "warn" if "pendientes de revisión" in note and snapshot["issues"] else "label")
         sheet.set_row(row - 1, 24)
         row += 1
-    for key, label in (("income", "Depósitos del período (sin saldo inicial)"), ("ledger_bank", "Mayor de la cuenta bancaria"), ("ledger_outstanding", "Mayor de cuentas pendientes"), ("ledger_suspense", "Mayor de cuenta transitoria"), ("statement_end", "Saldo final del extracto de control"), ("bank_difference", "Diferencia banco contra extracto"), ("difference", "Diferencia banco ajustado menos libros ajustados")):
+    for key, label in (("income", "Depósitos del período (sin saldo inicial)"), ("ledger_bank", "Mayor de la cuenta bancaria"), ("ledger_outstanding", "Mayor de cuentas pendientes"), ("ledger_suspense", "Mayor de cuenta transitoria"), ("statement_end", "Saldo final según banco (extracto o captura)"), ("bank_difference", "Diferencia banco contra saldo informado"), ("difference", "Diferencia banco ajustado menos libros ajustados")):
         merge(row, 3, 5, label, "concept")
         sheet.set_row(row - 1, 27)
         for idx, month in enumerate(months):
-            put(row - 1, 6 + idx * 2, month[key], "money")
+            put(row - 1, 6 + idx * 2, None if key == "income" and bank_flows_missing else month[key], "money")
         value = float(sum((decimal(month[key]) for month in months), decimal(0))) if key == "income" else months[-1][key]
-        put(row - 1, 30, value, "money")
+        put(row - 1, 30, None if key == "income" and bank_flows_missing else value, "money")
         if key in ("bank_difference", "difference"):
             sheet.conditional_format(row - 1, 5, row - 1, 30, {"type": "cell", "criteria": "not between", "minimum": -float(snapshot["rounding"]) / 2, "maximum": float(snapshot["rounding"]) / 2, "format": fmt["error"]})
         row += 1
     for month in months:
         merge(row, 3, 31, "%s: %s · Corte %s" % (month["name"], month["control"]["name"] if month["control"] else "Sin extracto al cierre", month["cutoff"]), "label")
         row += 1
+        if month.get("manual_balance"):
+            capture = month["manual_balance"]
+            merge(row, 3, 31, "%s: captura manual %s · Apertura %s · Cierre %s · Actualizada %s" % (
+                month["name"], capture["name"], capture["opening"], capture["closing"], capture.get("write_date", "")), "label")
+            row += 1
     for issue in snapshot["issues"]:
         merge(row, 3, 31, issue["message"], "warn")
         sheet.set_row(row - 1, 24)

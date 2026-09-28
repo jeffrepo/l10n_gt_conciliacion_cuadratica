@@ -79,6 +79,7 @@ def build_snapshot(data):
     year, last_month = int(data["year"]), int(data["month"])
     if not 1900 <= year <= 9998 or not 1 <= last_month <= 12:
         raise ValueError("Año o mes fuera de rango.")
+    data = _manual_opening_anchor(data)
     rounding = data.get("rounding", "0.01")
     start = date(year, 1, 1).isoformat()
     end = month_end(year, last_month).isoformat()
@@ -236,4 +237,77 @@ def build_snapshot(data):
                 "concept_totals": {code: float(money(amount, rounding)) for code, amount in totals.items()},
             })
         result.update(accounting_movements=accounting, accounting_months=accounting_months)
+    _apply_manual_bank_balances(data, result)
     return result
+
+
+def _manual_opening_anchor(data):
+    """A recorded balance can anchor existing bank transactions, never books."""
+    captures = data.get("manual_bank_balances", {})
+    start = "%04d-01-01" % int(data["year"])
+    end = month_end(int(data["year"]), int(data["month"])).isoformat()
+    transactions = [row for row in data["movements"] if start <= row["date"] <= end]
+    if data.get("bank_opening") is not None or not transactions or not captures:
+        return data
+    number = min(int(number) for number in captures)
+    anchor_date = "%04d-%02d-01" % (int(data["year"]), number)
+    preceding = sum((decimal(row["amount"]) for row in transactions if row["date"] < anchor_date), Decimal("0"))
+    return {**data, "bank_opening": float(decimal(captures[str(number)]["opening"]) - preceding)}
+
+
+def _apply_manual_bank_balances(data, result):
+    captures = data.get("manual_bank_balances", {})
+    if not captures:
+        return
+    rounding = result["rounding"]
+    issues = result["issues"]
+    previous_close, previous_manual = None, False
+
+    def issue(code, month, message):
+        if not any(item["code"] == code and item.get("month") == month["number"] for item in issues):
+            issues.append({"code": code, "month": month["number"], "message": "%s: %s" % (month["name"], message)})
+
+    for month in result["months"]:
+        capture = captures.get(str(month["number"]))
+        month["reported_bank_opening"] = month["bank_opening"]
+        month["manual_opening_used"] = False
+        month["manual_balance"] = dict(capture) if capture else None
+        if capture:
+            opening, closing = decimal(capture["opening"]), decimal(capture["closing"])
+            if previous_close is not None and money(opening - decimal(previous_close), rounding):
+                issue("manual_bank_continuity", month, "la apertura capturada no coincide con el saldo final informado del mes anterior.")
+            if month["bank_opening"] is None:
+                month["reported_bank_opening"] = float(money(opening, rounding))
+                month["manual_opening_used"] = True
+            elif money(decimal(month["bank_opening"]) - opening, rounding):
+                issue("manual_bank_opening_conflict", month, "la apertura capturada difiere de la apertura reconstruida con movimientos bancarios. Se conserva el cálculo y se debe revisar la diferencia.")
+            if month["control"]:
+                if money(decimal(month["statement_end"]) - closing, rounding):
+                    issue("manual_bank_closing_conflict", month, "el saldo final capturado difiere del extracto de Odoo. Se conserva el saldo del extracto.")
+            else:
+                month["statement_end"] = float(money(closing, rounding))
+                month["control"] = {"source_id": capture["source_id"], "source_model": "cq.bank.balance",
+                                    "name": "Captura manual: " + capture["name"], "date": month["cutoff"],
+                                    "balance": month["statement_end"], "complete": True}
+                issues[:] = [item for item in issues if not (item["code"] == "coverage" and item.get("month") == month["number"])]
+                if month["bank_end"] is not None:
+                    month["bank_difference"] = float(money(decimal(month["bank_end"]) - closing, rounding))
+                    if month["bank_difference"]:
+                        issue("bank_difference", month, "los movimientos bancarios no coinciden con el saldo final capturado.")
+            if month["bank_end"] is None:
+                # A declared closing is an independent bank balance. It does
+                # not prove that deposits/withdrawals or running totals are 0.
+                final = decimal(month["statement_end"])
+                adjusted = final + decimal(month["deposits"]) - decimal(month["checks"]) - decimal(month["payments"])
+                month["bank_adjusted"] = float(money(adjusted, rounding))
+                month["difference"] = float(money(adjusted - decimal(month["book_adjusted"]), rounding))
+                issue("bank_flow_missing", month, "se dispone de saldos bancarios capturados, pero faltan transacciones bancarias para reconstruir los depósitos y egresos del período. El saldo capturado no acredita esos movimientos.")
+                if month["difference"]:
+                    issue("book_difference", month, "existe una diferencia entre banco ajustado y libros ajustados.")
+        elif month["reported_bank_opening"] is None and previous_manual and previous_close is not None:
+            month["reported_bank_opening"] = previous_close
+            month["manual_opening_used"] = True
+        previous_close = month["statement_end"]
+        previous_manual = (month["control"] or {}).get("source_model") == "cq.bank.balance"
+    if result["months"][0]["reported_bank_opening"] is not None:
+        issues[:] = [item for item in issues if item["code"] != "opening"]

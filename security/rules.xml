@@ -1,4 +1,8 @@
 <odoo>
+    <record id="cq_bank_balance_company" model="ir.rule">
+        <field name="name">Saldos bancarios capturados por compañía</field><field name="model_id" ref="model_cq_bank_balance"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
     <record id="cq_template_company" model="ir.rule">
         <field name="name">Plantillas cuadráticas por compañía</field><field name="model_id" ref="model_cq_xlsx_template"/>
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>

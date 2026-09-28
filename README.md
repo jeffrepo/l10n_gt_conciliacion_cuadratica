@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.3.1`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.0`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
@@ -44,8 +44,9 @@ odoo-bin -d base_pruebas -i l10n_gt_conciliacion_cuadratica --stop-after-init
 - En **Contabilidad → Conciliación cuadrática → Cortes de extractos**, indicar
   la fecha final que cubre cada documento bancario cuando sea diferente de la
   última transacción. Si queda vacía, se usa la fecha del extracto de Odoo.
-  Para conservar un cierre se requiere un extracto de control al último día de
-  cada mes incluido, con saldo final real y líneas completas.
+  Cada mes requiere un saldo final de control. Puede provenir de un extracto
+  completo o de la captura mensual descrita abajo; los movimientos bancarios
+  y las diferencias se revisan por separado antes de conservar el cierre.
 - Configurar las reglas usando cuentas de contrapartida, socios/relacionadas
   identificados por contacto, país, método de pago o texto. No se incluyen reglas
   universales que adivinen el plan contable de la empresa. La relación entre un
@@ -93,8 +94,9 @@ El formulario bancario permanece disponible y conserva su formato.
 
 Si hay apuntes pero no transacciones bancarias en el período, se muestra un
 pendiente específico. Un saldo contable no acredita un saldo según banco:
-sin extractos, la apertura bancaria permanece `n.d.` y no se permite conservar
-el cierre. No es necesario cargar otro archivo para obtener el detalle contable.
+sin extractos ni captura mensual, la apertura bancaria permanece `n.d.`. Si
+faltan movimientos para reconstruir la actividad bancaria, no se permite
+conservar el cierre. No es necesario cargar otro archivo para obtener el detalle contable.
 
 Después de las asignaciones manuales y las reglas, se identifican automáticamente
 los cobros cuya contrapartida es únicamente cuentas por cobrar de un cliente
@@ -108,6 +110,40 @@ conceptos se consulta en Data y queda sin concepto único en el mayor contable.
 
 La fila **DEPÓSITOS** muestra la suma mensual de ingresos bancarios, sin agregar
 la apertura. La fila A del formato conserva apertura más depósitos.
+
+### Captura mensual de saldos según banco
+
+En **Contabilidad → Conciliación cuadrática → Saldos según banco**, los usuarios
+de Contabilidad pueden crear o corregir un registro por empresa, cuenta, año y
+mes. Indicar la referencia del estado de cuenta, saldo inicial y saldo final
+en la moneda de la cuenta. Se admiten observaciones; Odoo registra usuario y
+fecha de creación y modificación. Solo el administrador contable puede eliminar
+capturas. No es necesario subir otro archivo para ingresar estos saldos.
+
+Transcribir los valores del estado de cuenta: la apertura de febrero normalmente
+coincide con el cierre de enero. Se advierten diferencias de continuidad y
+discrepancias con los extractos de Odoo. Si existe un saldo bancario reconstruido
+o un extracto de control, se conserva como fuente; la captura no lo reemplaza.
+Un registro con cero indica un saldo informado de cero; la ausencia de registro
+no se interpreta como cero. No se crean pagos, asientos ni transacciones bancarias.
+
+La fila **SALDO INICIAL SEGÚN BANCO** se llena con la apertura informada. Si un
+mes no tiene apertura respaldada, se puede arrastrar el cierre capturado del
+mes anterior, pero sigue pendiente el cierre del mes actual. El formulario añade
+**Saldo final según banco (extracto o captura)** para distinguir el saldo
+informado del saldo calculado como apertura más depósitos menos egresos.
+Con transacciones bancarias existentes, una apertura capturada puede respaldar
+su reconstrucción; la captura por sí sola no acredita esos movimientos.
+
+Sin transacciones ni saldos calculados, depósitos y egresos bancarios se muestran
+como `n.d.`; los pagos, cobros y asientos siguen visibles en **Resumen contable**
+y **Mayor bancario Odoo**. El cierre informado permite comparar banco ajustado
+con libros ajustados, manteniendo un pendiente por falta de movimientos.
+
+Después de guardar o corregir capturas, **generar una nueva versión** del reporte.
+Cada resultado conserva los saldos usados y su referencia: modificar la captura
+no cambia resultados ni archivos ya generados. Las cifras escritas en la zona
+financiera de una plantilla no son una captura; se sustituyen al generar el XLSX.
 
 ### Generación y revisión
 

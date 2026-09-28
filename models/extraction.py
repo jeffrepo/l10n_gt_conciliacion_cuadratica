@@ -333,6 +333,21 @@ class QuadraticExtraction(models.Model):
                 "No se encontraron transacciones bancarias publicadas entre %s y %s en los diarios incluidos. Sí hay %s apuntes publicados en la cuenta contable: consulte Mayor bancario Odoo y Resumen contable Odoo. Pagos, cobros y asientos no son extractos; sus saldos no sustituyen el saldo según banco.", start, cutoff, len(accounting_movements))})
         account_types = set(journals.mapped("cq_account_type"))
         account_type = dict(journals._fields["cq_account_type"].selection).get(next(iter(account_types)), "") if len(account_types) == 1 else ""
+        manual_balances = {}
+        captures = self.env["cq.bank.balance"].search([
+            ("company_id", "=", company.id), ("account_id", "=", account.id), ("year", "=", year),
+        ])
+        for capture in captures.filtered(lambda item: int(item.month) <= month):
+            if capture.currency_id != currency:
+                issues.append({"code": "manual_bank_currency", "month": int(capture.month),
+                               "message": "La moneda de la captura bancaria %s no coincide con la moneda actual de la cuenta. Revise su configuración." % capture.name})
+                continue
+            manual_balances[capture.month] = {
+                "source_id": capture.id, "source_model": "cq.bank.balance", "name": capture.name,
+                "opening": capture.opening_balance, "closing": capture.closing_balance,
+                "currency": currency.name, "note": capture.note or "",
+                "write_uid": capture.write_uid.id, "write_date": str(capture.write_date),
+            }
         return {
             "year": year, "month": month, "rounding": str(currency.rounding),
             "company_rounding": str(company.currency_id.rounding),
@@ -351,7 +366,8 @@ class QuadraticExtraction(models.Model):
             "bank_opening": opening, "controls": controls, "ledger": ledger,
             "concepts": [{"code": item.code, "report_code": item.report_code or "", "name": item.name, "direction": item.direction,
                           "sequence": item.sequence, "detail": item.detail} for item in concepts],
-            "movements": movements, "accounting_movements": accounting_movements, "issues": issues,
+            "movements": movements, "accounting_movements": accounting_movements,
+            "manual_bank_balances": manual_balances, "issues": issues,
         }
 
     def _customer_receipt_code(self, move, bank_account, outstanding, company, partner_data, cutoff):

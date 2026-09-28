@@ -72,7 +72,8 @@ def _movements(sheet, snapshot, fmt):
     sheet.write_row(6, 0, headers, fmt["data_head"])
     sheet.set_row(6, 30)
     sheet.write_string("G8", "Saldo inicial", fmt["label"])
-    opening = snapshot["months"][0]["bank_opening"]
+    first_month = snapshot["months"][0]
+    opening = first_month.get("reported_bank_opening", first_month["bank_opening"])
     if opening is None:
         sheet.write_string("K8", "n.d.", fmt["warn"])
     else:

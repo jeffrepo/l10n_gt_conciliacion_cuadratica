@@ -52,18 +52,20 @@
                         <list create="0" edit="0" delete="0" decoration-warning="not bank_available or not control_available">
                             <field name="name"/><field name="cutoff"/><field name="currency_id" column_invisible="True"/>
                             <field name="bank_available" column_invisible="True"/><field name="control_available" column_invisible="True"/>
+                            <field name="reported_opening_available" column_invisible="True"/>
+                            <field name="bank_adjusted_available" column_invisible="True"/><field name="difference_available" column_invisible="True"/>
                             <field name="bank_source_status"/>
-                            <field name="bank_opening" invisible="not bank_available"/>
-                            <field name="income" string="Ingresos bancarios" column_invisible="not parent.has_bank_data"/>
-                            <field name="expense" string="Egresos bancarios" column_invisible="not parent.has_bank_data"/>
+                            <field name="display_bank_opening" invisible="not reported_opening_available"/>
+                            <field name="income" string="Ingresos bancarios" column_invisible="not parent.has_bank_movements"/>
+                            <field name="expense" string="Egresos bancarios" column_invisible="not parent.has_bank_movements"/>
                             <field name="bank_end" invisible="not bank_available"/>
                             <field name="statement_end" invisible="not control_available"/>
                             <field name="bank_difference" optional="hide" invisible="not bank_available or not control_available"/>
                             <field name="deposits" optional="hide"/>
                             <field name="checks" optional="hide"/><field name="payments" optional="hide"/>
-                            <field name="bank_adjusted" optional="hide" invisible="not bank_available"/>
+                            <field name="bank_adjusted" optional="hide" invisible="not bank_adjusted_available"/>
                             <field name="book_balance" optional="hide"/><field name="book_adjustment" optional="hide"/>
-                            <field name="book_adjusted"/><field name="difference" invisible="not bank_available"/>
+                            <field name="book_adjusted"/><field name="difference" invisible="not difference_available"/>
                             <field name="ledger_bank" optional="hide"/><field name="ledger_outstanding" optional="hide"/><field name="ledger_suspense" optional="hide"/>
                         </list>
                     </field></page>

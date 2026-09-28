@@ -3,12 +3,15 @@ from copy import deepcopy
 from io import BytesIO
 
 from openpyxl import load_workbook
+from psycopg2 import IntegrityError
 
 from odoo import Command
 from odoo.addons.account.tests.common import AccountTestInvoicingCommon
 from odoo.addons.l10n_gt_conciliacion_cuadratica.models.report import INTERNAL
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import Form, tagged
+from odoo.tests.common import new_test_user
+from odoo.tools import mute_logger
 
 
 @tagged("post_install", "-at_install")
@@ -694,3 +697,117 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertIn("bank_name", report.issue_ids.mapped("code"))
         self.assertEqual(report.month_ids.bank_end, 100)
         self.assertEqual(report.payload["movements"][0]["accounting_date"], "2024-01-29")
+
+    def _bank_capture(self, opening=0, closing=100, month="1", **values):
+        return self.env["cq.bank.balance"].create({
+            "name": "Estado de prueba", "company_id": self.company.id,
+            "account_id": self.bank.default_account_id.id, "year": 2024, "month": month,
+            "opening_balance": opening, "closing_balance": closing, **values,
+        })
+
+    def test_manual_balances_form_and_immutable_report_without_bank_transactions(self):
+        self._customer_payment(direct=True)
+        with Form(self.env["cq.bank.balance"]) as form:
+            form.company_id = self.company
+            form.account_id = self.bank.default_account_id
+            form.year, form.month = 2024, "1"
+            form.name = "Estado de prueba enero"
+            form.opening_balance, form.closing_balance = 0, 100
+        capture = form.save()
+        self._bank_capture(month="2", closing=999)  # Beyond cutoff, never used.
+        report = self._report()
+        month = report.month_ids
+        self.assertTrue(report.has_bank_data)
+        self.assertFalse(report.has_bank_movements)
+        self.assertFalse(month.bank_available)
+        self.assertTrue(month.reported_opening_available)
+        self.assertTrue(month.control_available)
+        self.assertEqual((month.display_bank_opening, month.statement_end, month.difference), (0, 100, 0))
+        self.assertTrue(month.difference_available)
+        self.assertEqual(month.accounting_income, 100)
+        self.assertEqual(report.payload["movements"], [])
+        manual = report.payload["months"][0]["manual_balance"]
+        self.assertEqual(manual["source_id"], capture.id)
+        self.assertIn("bank_flow_missing", report.issue_ids.mapped("code"))
+        with self.assertRaises(UserError):
+            report.action_confirm()
+        exported = report._xlsx_bytes()
+        old_payload = deepcopy(report.payload)
+        capture.closing_balance = 105
+        updated = self._report()
+        self.assertEqual(updated.month_ids.statement_end, 105)
+        self.assertEqual(updated.month_ids.difference, 5)
+        self.assertEqual(report.payload, old_payload)
+        self.assertEqual(report._xlsx_bytes(), exported)
+        self.assertEqual(report.month_ids.statement_end, 100)
+
+    def test_manual_balances_do_not_replace_native_statements(self):
+        self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        self._bank_capture(opening=10, closing=110)
+        report = self._report()
+        self.assertEqual((report.month_ids.display_bank_opening, report.month_ids.statement_end), (0, 100))
+        self.assertTrue({"manual_bank_opening_conflict", "manual_bank_closing_conflict"} <= set(report.issue_ids.mapped("code")))
+        self.assertEqual(report.payload["months"][0]["manual_balance"]["closing"], 110)
+
+    def test_manual_capture_anchors_bank_transactions_without_statement(self):
+        _, line = self._statement("2024-01-29", 100, 0, 100, "2024-01-31")
+        line.statement_id = False
+        self._bank_capture()
+        report = self._report()
+        self.assertEqual(report.month_ids.bank_end, 100)
+        self.assertEqual(report.issue_count, 0, report.payload["issues"])
+        self.assertEqual(report.payload["months"][0]["control"]["source_model"], "cq.bank.balance")
+        report.action_confirm()
+        self.assertEqual(report.state, "confirmed")
+
+    def test_manual_zero_and_foreign_currency_are_preserved(self):
+        foreign = self.setup_other_currency("EUR", rates=[("1900-01-01", 0.5)])
+        self.bank.currency_id = foreign
+        capture = self._bank_capture(closing=0)
+        self.assertEqual(capture.currency_id, foreign)
+        report = self._report()
+        self.assertEqual(report.currency_id, foreign)
+        self.assertTrue(report.month_ids.reported_opening_available)
+        self.assertTrue(report.month_ids.control_available)
+        self.assertEqual(report.month_ids.statement_end, 0)
+        self.assertIsNone(report.payload["months"][0]["bank_end"])
+        self.bank.currency_id = self.company.currency_id
+        changed = self._report()
+        self.assertIn("manual_bank_currency", changed.issue_ids.mapped("code"))
+        self.assertFalse(changed.month_ids.control_available)
+
+    def test_manual_capture_rejects_duplicates_wrong_account_and_year(self):
+        self._bank_capture()
+        with self.assertRaises((ValidationError, IntegrityError)), mute_logger("odoo.sql_db"), self.cr.savepoint():
+            self._bank_capture()
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            self._bank_capture(year=1899)
+        with self.assertRaises(ValidationError), self.cr.savepoint():
+            self._bank_capture(account_id=self.incoming.id)
+
+    def test_manual_capture_permissions_and_company_isolation(self):
+        user = new_test_user(self.env, login="cq_capture_user", groups="account.group_account_user",
+                             company_id=self.company.id, company_ids=[Command.set(self.company.ids)])
+        captures = self.env["cq.bank.balance"].with_user(user).with_context(allowed_company_ids=self.company.ids)
+        capture = captures.create({
+            "name": "Estado capturado por contador", "company_id": self.company.id,
+            "account_id": self.bank.default_account_id.id, "year": 2024, "month": "1",
+            "opening_balance": 0, "closing_balance": 100,
+        })
+        capture.closing_balance = 101
+        self.assertEqual(capture.closing_balance, 101)
+        with self.assertRaises(AccessError):
+            capture.unlink()
+        other = self.env["res.company"].sudo().create({"name": "CQ capture isolation"})
+        bank = self.env["account.journal"].sudo().with_company(other).create({
+            "name": "Other capture bank", "code": "CQCAP", "type": "bank", "company_id": other.id,
+        })
+        private = self.env["cq.bank.balance"].sudo().with_company(other).create({
+            "name": "Private bank statement", "company_id": other.id,
+            "account_id": bank.default_account_id.id, "year": 2024, "month": "1",
+            "opening_balance": 900, "closing_balance": 999,
+        })
+        self.assertNotIn(private.id, captures.search([]).ids)
+        with self.assertRaises(AccessError):
+            captures.browse(private.id).read(["opening_balance"])
+        self.assertEqual(self._report().month_ids.statement_end, 101)

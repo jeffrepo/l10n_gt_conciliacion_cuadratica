@@ -300,12 +300,15 @@ def fill_template(profile, generated, layout, snapshot):
         key = next((footer_keys[normalized(main.cell(row, col).value)] for col in range(2, 6) if normalized(main.cell(row, col).value) in footer_keys), None)
         if not key:
             continue
+        def footer_value(month):
+            value = month.get("reported_bank_opening", month.get(key)) if key == "bank_opening" else month.get(key)
+            return value if value is not None else "n.d."
         for col in range(6, 32):
             main.cell(row, col).value = None
         for idx, month in enumerate(snapshot["months"]):
-            main.cell(row, 7 + idx * 2, month.get(key) if month.get(key) is not None else "n.d.")
+            main.cell(row, 7 + idx * 2, footer_value(month))
         month = snapshot["months"][0 if key.endswith("opening") else -1]
-        main.cell(row, 31, month.get(key) if month.get(key) is not None else "n.d.")
+        main.cell(row, 31, footer_value(month))
     main.freeze_panes = "F19"
     main.print_title_rows = "17:18"
     main.print_title_cols = "B:E"
