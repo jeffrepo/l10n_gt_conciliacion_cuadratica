@@ -1,0 +1,40 @@
+<odoo>
+    <record id="cq_movement_list" model="ir.ui.view">
+        <field name="name">account.bank.statement.line.cq.list</field><field name="model">account.bank.statement.line</field>
+        <field name="arch" type="xml"><list create="0" delete="0" multi_edit="1">
+            <field name="date" readonly="1"/><field name="journal_id" readonly="1"/><field name="company_id" column_invisible="True"/>
+            <field name="payment_ref" readonly="1"/><field name="partner_id" readonly="1"/>
+            <field name="currency_id" column_invisible="True"/><field name="amount" readonly="1"/>
+            <field name="cq_concept_id"/><field name="cq_note"/>
+        </list></field>
+    </record>
+    <record id="cq_movement_form" model="ir.ui.view">
+        <field name="name">account.bank.statement.line.cq.form</field><field name="model">account.bank.statement.line</field>
+        <field name="arch" type="xml"><form create="0" delete="0"><sheet>
+            <group><group><field name="company_id" readonly="1"/><field name="journal_id" readonly="1"/><field name="date" readonly="1"/><field name="move_id" readonly="1"/><field name="statement_id" readonly="1"/></group>
+                <group><field name="payment_ref" readonly="1"/><field name="partner_id" readonly="1"/><field name="currency_id" readonly="1"/><field name="amount" readonly="1"/><field name="cq_concept_id" domain="[('direction', '=', 'in' if amount &gt;= 0 else 'out')]"/><field name="cq_note"/></group></group>
+            <separator string="Distribución opcional: deje vacío el concepto único para dividir el movimiento"/>
+            <field name="cq_allocation_ids">
+                <list editable="bottom"><field name="concept_id"/><field name="currency_id" column_invisible="True"/><field name="amount" sum="Total distribuido"/><field name="note"/></list>
+            </field>
+        </sheet></form></field>
+    </record>
+    <record id="action_cq_movements" model="ir.actions.act_window">
+        <field name="name">Clasificar movimientos</field><field name="res_model">account.bank.statement.line</field><field name="view_mode">list,form</field>
+        <field name="domain">[('state', '=', 'posted'), ('journal_id.cq_enabled', '=', True)]</field>
+    </record>
+    <record id="action_cq_movements_list" model="ir.actions.act_window.view"><field name="sequence">1</field><field name="view_mode">list</field><field name="view_id" ref="cq_movement_list"/><field name="act_window_id" ref="action_cq_movements"/></record>
+    <record id="action_cq_movements_form" model="ir.actions.act_window.view"><field name="sequence">2</field><field name="view_mode">form</field><field name="view_id" ref="cq_movement_form"/><field name="act_window_id" ref="action_cq_movements"/></record>
+    <record id="cq_statement_list" model="ir.ui.view">
+        <field name="name">account.bank.statement.cq.list</field><field name="model">account.bank.statement</field>
+        <field name="arch" type="xml"><list create="0" delete="0" editable="bottom">
+            <field name="journal_id" readonly="1"/><field name="name" readonly="1"/><field name="date" readonly="1"/>
+            <field name="cq_date_end"/><field name="currency_id" column_invisible="True"/>
+            <field name="balance_start" readonly="1"/><field name="balance_end_real" readonly="1"/><field name="is_complete" readonly="1"/>
+        </list></field>
+    </record>
+    <record id="action_cq_statements" model="ir.actions.act_window">
+        <field name="name">Cortes de extractos</field><field name="res_model">account.bank.statement</field><field name="view_mode">list</field><field name="view_id" ref="cq_statement_list"/>
+        <field name="domain">[('journal_id.cq_enabled', '=', True)]</field>
+    </record>
+</odoo>

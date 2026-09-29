@@ -1,1 +1,419 @@
-# l10n_gt_conciliacion_cuadratica
+# Conciliación cuadrática para Odoo 19
+
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.2`.
+Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
+corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
+de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
+contables comunes a Community y Enterprise. No depende de GDOMEX ni de `account_gt`.
+
+## Instalación
+
+1. Colocar este repositorio con el nombre `l10n_gt_conciliacion_cuadratica` dentro
+   de una ruta de addons de Odoo 19.
+2. Instalar `xlsxwriter` y `openpyxl` en el entorno Python del servidor si no están disponibles.
+3. Actualizar la lista de aplicaciones e instalar **Conciliación cuadrática Guatemala**.
+4. Acceder con permisos de Contabilidad. La configuración de conceptos y reglas
+   requiere permisos de administrador de Contabilidad.
+5. Dentro de la aplicación Contabilidad, abrir el menú superior **Contabilidad**
+   de Odoo. En **Conciliación cuadrática** se agrupan Generar conciliación,
+   Resultados y cierres, Clasificar movimientos, Cortes de extractos, Saldos según
+   banco, Plantillas XLSX y Configuración. Las rutas de este documento empiezan
+   en ese menú superior, una vez dentro de la aplicación.
+
+Ejemplo de instalación por consola:
+
+```bash
+odoo-bin -d base_pruebas -i l10n_gt_conciliacion_cuadratica --stop-after-init
+```
+
+## Configuración inicial
+
+- En al menos un diario de cada cuenta contable bancaria, pestaña
+  **Conciliación cuadrática**, activar su inclusión. Se reúnen automáticamente
+  todos los diarios bancarios de esa compañía cuya **Cuenta bancaria contable**
+  (`default_account_id`) sea la misma, incluso diarios no habilitados o archivados.
+  Por ejemplo, Cheques, Depósitos y Transferencias de BAC Q generan un solo XLSX
+  si usan la misma cuenta contable; una cuenta BAC USD diferente genera otro.
+  El nombre del diario, el banco BAC o la moneda no son criterios de agrupación.
+- Revisar la cuenta bancaria física vinculada, moneda y tipo de cuenta.
+  Todos los diarios de una cuenta contable deben tener la misma moneda efectiva.
+  La compañía forma parte de la agrupación, aunque comparta el plan de cuentas.
+- Si varios diarios del grupo contienen movimientos bancarios, marcar
+  **Usar extractos como control de la cuenta** en un solo diario, el que contiene
+  el estado de cuenta completo del banco. Si únicamente uno tiene movimientos,
+  se selecciona automáticamente. Se usa su saldo inicial y su control mensual
+  una sola vez; nunca se suman los saldos de los extractos de varios diarios.
+- Mantener configuradas las cuentas de cobros y pagos pendientes de los métodos
+  de pago. El módulo las obtiene automáticamente. Las cuentas pendientes
+  adicionales se configuran explícitamente en el diario.
+- En **Contabilidad → Conciliación cuadrática → Cortes de extractos**, indicar
+  la fecha final que cubre cada documento bancario cuando sea diferente de la
+  última transacción. Si queda vacía, se usa la fecha del extracto de Odoo.
+  Cada mes requiere un saldo final de control. Puede provenir de un extracto
+  completo o de la captura mensual descrita abajo; los movimientos bancarios
+  y las diferencias se revisan por separado antes de conservar el cierre.
+- Configurar las reglas usando cuentas de contrapartida, socios/relacionadas
+  identificados por contacto, país, método de pago o texto. No se incluyen reglas
+  universales que adivinen el plan contable de la empresa. La relación entre un
+  contacto y una empresa se expresa en las reglas de esa compañía.
+
+Las condiciones de una regla se combinan con AND; una lista de cuentas o
+contrapartes admite cualquiera de sus miembros. Gana la prioridad numérica
+menor. Conceptos distintos empatados a la misma prioridad quedan pendientes.
+Un país desconocido no se convierte en país extranjero. Un concepto manual
+o una distribución por conceptos prevalecen sobre las reglas.
+
+El catálogo inicial distingue ingresos, egresos y su finalidad. Incluye
+**Cheques emitidos** para permitir la presentación del formato de referencia.
+Configurar su prioridad frente a **Proveedores** y **Gastos operativos** según
+el criterio acordado; cada importe se incluye una sola vez. El medio de pago
+permanece disponible en el detalle aunque no sea el concepto principal.
+El campo **Código en Excel** permite adaptar los códigos breves de presentación
+al formato de la empresa sin cambiar la identificación interna de los conceptos.
+
+## Operación mensual
+
+### Si se trabaja solo con pagos, cobros y asientos
+
+Cada nuevo XLSX incluye **Mayor bancario Odoo**, con todos los apuntes publicados
+de la cuenta bancaria, y **Resumen contable Odoo**, con apertura, entradas/débitos,
+salidas/créditos, cierre y clasificación por mes. Se incluyen todos los diarios
+que afecten esa cuenta, sin repetir apuntes por cada diario configurado. Los
+importes usan la moneda de la cuenta y el importe histórico disponible; no se
+reconstruyen monedas faltantes con el tipo de cambio actual.
+
+Estas dos hojas son salidas reservadas, también al usar una plantilla. En cada
+mes sin transacciones bancarias ni extracto completo de control, **Banco** y
+**Data** se llenan con los apuntes publicados de esa cuenta: depósitos, egresos,
+conceptos y desgloses. Se usa una sola fuente por mes, sin sumar pagos contables
+y transacciones bancarias entre sí. Un extracto completo de un mes sin actividad
+mantiene los movimientos bancarios en cero. El resumen
+contable corresponde solo a la cuenta del banco; la sección de conciliación de
+libros también considera las cuentas pendientes y transitorias configuradas.
+**Ver apuntes contables** abre los documentos que respaldan el detalle.
+
+Al abrir **Revisar resultados**, la primera pestaña es **Resumen contable**:
+apertura, ingresos/débitos, egresos/créditos y cierre por mes. Las columnas de
+cobros locales, del exterior y relacionadas se pueden activar en la lista.
+La pestaña **Conciliación bancaria** conserva los cálculos por extractos e
+identifica los saldos sin respaldo; esas celdas quedan vacías en lugar de
+mostrar un cero. Cuando no hay transacciones bancarias, el XLSX abre primero
+**Resumen contable Odoo**, seguido del mayor, también con una plantilla.
+El formulario bancario permanece disponible y conserva su formato.
+
+La fila **Origen de los movimientos** identifica los meses que usan
+**Contabilidad Odoo**. **Data** muestra ese mismo origen y abre el apunte original;
+su fecha bancaria queda vacía cuando no existe. Las reglas ya configuradas
+alimentan los conceptos (clientes locales, exterior, relacionadas, proveedores,
+etc.). Los importes sin concepto se incluyen una sola vez en **Otros ingresos /
+egresos → Pendiente de clasificar**. Los meses consultados sin apuntes muestran
+cero; los posteriores al corte siguen vacíos.
+
+La apertura y el cierre **según banco** continúan tomándose de extractos o de las
+capturas mensuales. Cuando se usan flujos contables, **SALDO CALCULADO (A - B)**
+muestra apertura informada más ingresos menos egresos. El **SALDO CONCILIADO**
+bancario usa el cierre informado independientemente, con sus partidas pendientes;
+no usa el saldo calculado desde libros para certificar una conciliación bancaria.
+Si no hay apertura o cierre respaldado, esos saldos permanecen `n.d.` aunque los
+conceptos ya tengan importes. Las reglas nuevas se aplican al **Generar nueva versión**.
+
+Si hay apuntes pero no transacciones bancarias en el período, se muestra un
+pendiente específico. Un saldo contable no acredita un saldo según banco:
+sin extractos ni captura mensual, la apertura bancaria permanece `n.d.`. Si
+faltan movimientos para reconstruir la actividad bancaria, no se permite
+conservar el cierre. No es necesario cargar otro archivo para obtener el detalle contable.
+
+Después de las asignaciones manuales y las reglas, se identifican automáticamente
+los cobros cuya contrapartida es únicamente cuentas por cobrar de un cliente
+identificado, usando el país de su entidad comercial y el de la empresa para
+distinguir local/exterior. Para cobros bancarios mediante cuentas pendientes,
+se exige conciliación completa con pagos de cliente publicados al corte.
+Contactos o países desconocidos, cobros mixtos y reglas ambiguas requieren
+clasificación explícita. Las relacionadas se identifican mediante reglas por
+contacto o cuenta; no se deducen del nombre. Una distribución bancaria de varios
+conceptos se consulta en Data y queda sin concepto único en el mayor contable.
+
+La fila **DEPÓSITOS** muestra la suma mensual de ingresos bancarios, sin agregar
+la apertura. La fila A del formato conserva apertura más depósitos.
+
+### Captura mensual de saldos según banco
+
+En **Contabilidad → Conciliación cuadrática → Saldos según banco**, los usuarios
+de Contabilidad pueden crear o corregir un registro por empresa, cuenta, año y
+mes. Indicar la referencia del estado de cuenta, saldo inicial y saldo final
+en la moneda de la cuenta. Se admiten observaciones; Odoo registra usuario y
+fecha de creación y modificación. Solo el administrador contable puede eliminar
+capturas. No es necesario subir otro archivo para ingresar estos saldos.
+
+Transcribir los valores del estado de cuenta: la apertura de febrero normalmente
+coincide con el cierre de enero. Se advierten diferencias de continuidad y
+discrepancias con los extractos de Odoo. Si existe un saldo bancario reconstruido
+o un extracto de control, se conserva como fuente; la captura no lo reemplaza.
+Un registro con cero indica un saldo informado de cero; la ausencia de registro
+no se interpreta como cero. No se crean pagos, asientos ni transacciones bancarias.
+
+La fila **SALDO INICIAL SEGÚN BANCO** se llena con la apertura informada. Si un
+mes no tiene apertura respaldada, se puede arrastrar el cierre capturado del
+mes anterior, pero sigue pendiente el cierre del mes actual. El formulario añade
+**Saldo final según banco (extracto o captura)** para distinguir el saldo
+informado del saldo calculado como apertura más depósitos menos egresos.
+Con transacciones bancarias existentes, una apertura capturada puede respaldar
+su reconstrucción; la captura por sí sola no acredita esos movimientos.
+
+Sin transacciones bancarias, el formato presenta depósitos y egresos desde
+contabilidad cuando está disponible, identificando su origen; si tampoco dispone
+de esa fuente, se muestran como `n.d.`. Los pagos, cobros y asientos siguen visibles
+en **Resumen contable** y **Mayor bancario Odoo**. El cierre informado permite comparar banco ajustado
+con libros ajustados, manteniendo un pendiente por falta de movimientos.
+
+Después de guardar o corregir capturas, **generar una nueva versión** del reporte.
+Cada resultado conserva los saldos usados y su referencia: modificar la captura
+no cambia resultados ni archivos ya generados. Las cifras escritas en la zona
+financiera de una plantilla no son una captura; se sustituyen al generar el XLSX.
+
+### Generación y revisión
+
+1. Cargar los movimientos y estados de cuenta en el flujo bancario habitual de
+   Odoo y realizar la conciliación. El XLSX de plantilla define la presentación;
+   sus importes existentes no sustituyen los datos bancarios de Odoo.
+2. Abrir **Generar conciliación**, seleccionar empresa, año, mes de corte y una
+   o varias cuentas contables bancarias habilitadas (o todas). El resultado muestra
+   la cuenta contable y los diarios incluidos. La configuración de diarios decide
+   qué cuentas están disponibles, pero no permite omitir parte de una misma cuenta.
+3. Pulsar **Calcular** y revisar los resultados. Los faltantes, diferencias y
+   distribuciones incompletas se muestran como pendientes.
+4. Corregir la clasificación en **Clasificar movimientos**. Un movimiento puede
+   tener un concepto único o una distribución de importes positivos. El resto
+   no distribuido queda visible como pendiente. No se modifican importes contables.
+5. Generar una nueva versión y descargar los XLSX. Varias cuentas se entregan
+   en un ZIP. Con plantilla se conservan los nombres de las hojas Banco y Data
+   y las hojas manuales adicionales; se añaden **Partidas conciliatorias** y
+   **Control Odoo**. Sin plantilla se utiliza el diseño incorporado con **Banco**,
+   **Data** y **Partidas conciliatorias**, con el control debajo del formulario.
+6. Opcionalmente, **Conservar cierre** cuando no queden pendientes de revisión.
+   Esto conserva la versión; no publica asientos, no concilia movimientos y no
+   modifica las fechas de bloqueo contable de Odoo.
+
+Las versiones son inmutables y no se eliminan desde el módulo. Corregir una
+fuente no cambia un resultado anterior. Una nueva versión usa las fuentes
+vigentes; no reconstruye registros eliminados ni el estado de conocimiento
+anterior a una modificación retroactiva. El XLSX se exporta desde el resultado
+conservado, no consultando otra vez los movimientos.
+
+## Plantillas XLSX y datos manuales
+
+En **Contabilidad → Conciliación cuadrática → Plantillas XLSX**, un administrador
+de Contabilidad puede cargar el archivo una vez, asociado a empresa y cuenta
+contable bancaria. El asistente elige la plantilla activa de esa cuenta por
+prioridad; para una sola cuenta se puede seleccionar una plantilla específica.
+Varias cuentas en el mismo ZIP usan cada una su propia plantilla.
+
+Se admite la estructura de los formatos proporcionados en GTQ y USD: saldo
+inicial en C19, meses en la fila 18 con dos columnas por mes (F:AC), totales
+en AD:AE y tabla Data con encabezados en la fila 7 u 8. Los nombres de las hojas
+pueden variar. No es un importador universal de cualquier diseño Excel; se
+valida la estructura al guardar. Se permiten archivos XLSX de hasta 8 MB,
+sin macros ni vínculos a otros libros.
+
+- Se conservan colores, fuentes, anchos, rótulos de contrapartes/bancos y notas
+  fuera del área financiera. Las hojas manuales adicionales se mantienen.
+- Se sustituyen la cabecera de identidad con los datos disponibles de Odoo,
+  el cuadro financiero entre saldo inicial y el segundo saldo conciliado,
+  la tabla de movimientos y los controles bancarios del formato. **Los importes
+  y fórmulas previos de estas áreas no se incorporan como ajustes manuales**.
+  Las hojas Partidas conciliatorias y Control Odoo son salidas reservadas.
+- Si Odoo no identifica el banco o el número de cuenta de cabecera, se conserva
+  el texto de la plantilla y se documenta ese origen en Control Odoo. La falta
+  de configuración continúa visible como pendiente; no cambia la contabilidad.
+- Los desgloses solo asignan importes a un rótulo manual cuando coincide una
+  cuenta conocida o un nombre identificable sin ambigüedad. Un banco desconocido
+  no se adivina por descripción. Con movimientos bancarios, las filas sin correspondencia quedan en cero;
+  se agregan filas para las contrapartes nuevas o no identificadas.
+- Se agregan filas cuando el detalle no cabe, actualizando fórmulas y referencias
+  A1 directas a las filas del formulario. Los ajustes manuales y fórmulas libres
+  en hojas adicionales se conservan, pero no alimentan los totales de Odoo.
+- Con extractos, enero toma la apertura respaldada y febrero a diciembre muestran
+  el cierre calculado del mes anterior, incluso en meses sin movimientos. Las
+  capturas mensuales aportan saldos informados cuando falta ese respaldo.
+  Los meses posteriores al corte quedan vacíos. Sin respaldo se muestra `n.d.`.
+- Se conserva la convención del formato **A = apertura + depósitos** y
+  **saldo bancario = A − B**. El total anual A usa la apertura de enero una sola
+  vez. El saldo conciliado de libros se calcula desde libros independientemente.
+
+Cada resultado conserva su propia copia de plantilla, nombre y huella SHA-256.
+Modificar la plantilla afecta a nuevos resultados, incluso si el anterior aún
+no se había descargado. El archivo descargado sigue siendo editable; las
+ediciones de Excel no se importan a Odoo. Los ajustes manuales integrados a la
+conciliación requieren definir sus celdas y reglas en una versión posterior.
+
+## Criterio de cálculo
+
+Los importes se expresan en la moneda común de los diarios (o de la compañía cuando un
+diario no define otra). Los saldos de bancos y los de libros se obtienen de
+fuentes separadas:
+
+- **Banco calculado:** saldo inicial respaldado por un extracto o captura más
+  entradas menos salidas bancarias. La captura sola no acredita los movimientos.
+  No se reinicia con cada extracto para esconder saltos.
+- **Control bancario:** comparación con `balance_end_real` del extracto que
+  cubre el fin de mes. Los saldos reales deben haber sido cargados desde el banco;
+  un saldo autocompletado por Odoo no prueba por sí solo una verificación externa.
+  Si falta ese extracto, se usa el cierre informado en la captura del mes y se
+  identifica su origen manual.
+- **Saldo según libros:** mayor de la cuenta bancaria + cuentas pendientes
+  atribuibles al banco + cuenta transitoria atribuible al banco. Esta es la
+  definición de libro de bancos utilizada para el flujo con cuentas pendientes;
+  los tres componentes se muestran por separado.
+- **Banco ajustado:** banco calculado (o cierre informado cuando falta el cálculo)
+  + depósitos en tránsito − cheques en circulación − otros pagos pendientes.
+- **Libros ajustados:** saldo según libros menos el residual firmado de la
+  transitoria. Cada ajuste tiene su apunte en Partidas conciliatorias; no se
+  inventa una contrapartida para hacer coincidir los saldos.
+- **Diferencia:** banco ajustado menos libros ajustados.
+
+El mayor de la cuenta bancaria incluye sus apuntes publicados en **cualquier
+diario**, incluidos los asientos de apertura y ajustes de diarios generales.
+Las cuentas pendientes y transitorias se consultan una sola vez y se atribuyen
+a la cuenta bancaria de origen. Compartirlas entre los diarios de la misma cuenta
+no genera la observación de banco ambiguo. Otras cuentas bancarias conservan sus
+propias partidas. Las reglas específicas de diario siguen aplicándose únicamente
+a movimientos de ese diario. El XLSX conserva el diario de origen en el detalle.
+
+Los movimientos bancarios se obtienen de las transacciones importadas en Odoo;
+los pagos y sus conciliaciones alimentan las partidas pendientes y los libros.
+No se deduplican transacciones diferentes solo porque tengan el mismo importe,
+fecha o referencia. Un extracto importado dos veces debe corregirse en Odoo.
+
+Los residuales se reconstruyen con los importes conciliados cuya `max_date`
+(máxima fecha contable de los dos apuntes) no supera el corte. Así, un cheque
+de enero pagado parcialmente en febrero conserva todo el pendiente en enero
+y solo el remanente en febrero. Los pagos sin método `check_printing` se
+presentan como otros pagos pendientes, no se etiquetan arbitrariamente como cheques.
+
+En moneda extranjera se utilizan `amount_currency` y los importes en moneda
+extranjera de las conciliaciones parciales. Nunca se convierten saldos antiguos
+con el tipo de cambio actual. Las partidas conservan también su saldo residual
+en moneda de la compañía. Una diferencia cambiaria con importe cero en moneda
+bancaria no se trata como movimiento de caja en esa moneda.
+
+Los flujos anuales se suman. Los saldos muestran el último mes incluido; el
+saldo inicial anual es el de enero. Los meses posteriores al corte quedan vacíos.
+Los importes faltantes se muestran como `n.d.` en el XLSX, no como un cero validado.
+
+## Alcance y límites de esta versión
+
+- Se procesan transacciones bancarias y apuntes **publicados**. Los reversos
+  publicados permanecen visibles; los borradores no alimentan el reporte.
+- El flujo de cuentas pendientes separadas está soportado. Los métodos de pago
+  que usan directamente la cuenta bancaria generan un pendiente de configuración:
+  no se presenta su conciliación como un cierre validado en esta versión.
+- Una cuenta contable vinculada a varias cuentas bancarias físicas genera una
+  observación; no se declara un cierre válido mezclando esas identidades.
+- Si varios diarios contienen movimientos y no se define el diario de control,
+  se conservan sus ingresos y egresos, pero los saldos bancarios sin respaldo se
+  muestran como no disponibles y no se permite conservar el cierre.
+- Las cuentas transitorias compartidas se atribuyen mediante el banco del
+  movimiento, pago, diario o relación de conciliación. Los apuntes sin atribución
+  inequívoca quedan señalados y no se asignan silenciosamente a una empresa/banco.
+- Cada cálculo utiliza únicamente el contexto de la empresa del asistente,
+  independientemente de las otras empresas activas en la barra superior. Los
+  contactos y cuentas de contraparte se leen con los permisos reales del usuario.
+  Si un movimiento válido referencia un contacto restringido, se conservan su
+  importe y sus partidas; los datos inaccesibles se omiten y se registra un
+  pendiente de revisión. No se amplían empresas activas ni permisos para leerlos.
+  El país desconocido de un contacto restringido no lo clasifica como extranjero.
+- Un diario en USD necesita que sus apuntes de banco y pendientes conserven USD.
+  Los apuntes que solo conservan otra moneda generan un pendiente de revisión.
+- Un mes sin extracto ni captura de control al cierre se puede exportar como borrador.
+  No se presume cobertura completa simplemente porque no haya movimientos.
+- Los números y bancos de contrapartes se muestran cuando están identificados
+  en las fuentes; no se elige arbitrariamente una de sus cuentas bancarias.
+- El desglose de dividendos presenta los diez mayores socios y agrupa el resto.
+- El formato se basa en la estructura de conciliación proporcionada para el
+  proyecto. No incluye presentación automática ante SAT ni certificación normativa.
+
+## Pruebas
+
+Las pruebas usan datos sintéticos: este repositorio no contiene archivos
+bancarios, NIT, cuentas ni nombres reales de los ejemplos proporcionados.
+
+Pruebas independientes del servidor (requieren `xlsxwriter` y `openpyxl`):
+
+```bash
+python -m unittest discover -s tests_unit -v
+```
+
+Pruebas de integración, en una base de datos desechable de Odoo 19:
+
+```bash
+odoo-bin -d cq_test -i l10n_us,l10n_gt_conciliacion_cuadratica \
+  --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica --stop-after-init
+```
+
+`l10n_us` se usa solo para los fixtures contables de las pruebas comunes de Odoo;
+no es una dependencia del módulo. `openpyxl` sí es necesario para las plantillas.
+GitHub Actions instala el módulo en Odoo 19
+con PostgreSQL 16 y ejecuta las pruebas de integración y de exportación.
+
+## Actualización desde versiones anteriores
+
+Actualizar el código, reiniciar Odoo y **actualizar el módulo instalado**:
+
+```bash
+odoo-bin -d base_pruebas -u l10n_gt_conciliacion_cuadratica --stop-after-init
+```
+
+Las marcas existentes de inclusión en los diarios siguen siendo válidas.
+Los resultados anteriores conservan su cálculo por diario y sus archivos; no se
+fusionan ni recalculan automáticamente. Se identifican como resultados anteriores
+en el formulario. Usar **Generar nueva versión** para obtener el resultado por
+cuenta contable. Si varios diarios contienen extractos, configurar antes el diario
+de control. Las pruebas de CI también actualizan una instalación de la versión
+anterior para verificar los cambios de modelos y vistas.
+
+La versión 19.0.1.1.1 corrige los errores de acceso a contactos de otras compañías
+durante la generación. No cambia las compañías de los contactos ni las reglas de
+seguridad existentes. Los pendientes de contacto se resuelven revisando la relación
+en el documento original y la configuración de acceso; después se genera una nueva
+versión del reporte. No es necesario activar compañías ajenas para poder exportar
+un borrador con los importes de la compañía seleccionada.
+
+La versión 19.0.1.2.0 incorpora plantillas XLSX por empresa/cuenta y el diseño
+mensual del formato de referencia. Instalar la nueva dependencia `openpyxl`
+(incluida en `requirements.txt`) antes de actualizar el módulo. Cargar la plantilla
+y generar una nueva versión; los archivos ya descargados se conservan.
+
+La versión 19.0.1.3.0 añade el mayor y resumen mensual de la cuenta contable aun
+sin transacciones bancarias, identificación conservadora de cobros de clientes
+y el total en la fila DEPÓSITOS. Actualizar el módulo y generar una nueva versión:
+los resultados anteriores no contienen el detalle contable adicional.
+
+La versión 19.0.1.3.1 muestra en pantalla el resumen contable ya conservado en
+el XLSX y abre esa hoja primero cuando no hay transacciones bancarias. Actualizar
+el módulo: los resultados creados con 1.3.0 muestran sus importes sin recalcular
+la contabilidad. Para obtener el nuevo orden de hojas, generar una nueva versión
+si el archivo anterior ya estaba descargado. Las versiones anteriores a 1.3.0
+requieren una nueva generación para disponer del resumen contable.
+
+La versión 19.0.1.4.0 añade **Saldos según banco**. Actualizar el módulo, registrar
+las aperturas y cierres mensuales y generar una nueva versión del reporte.
+Los datos de capturas se incorporan únicamente a resultados nuevos; no se
+convierten saldos de ejemplo de las plantillas ni ceros antiguos en capturas.
+
+La versión 19.0.1.4.1 reúne todas las opciones dentro del menú nativo
+**Contabilidad → Conciliación cuadrática** (`account.menu_finance_entries`).
+En Enterprise 19, `accountant` mueve este menú a la aplicación Contabilidad
+(`accountant.menu_accounting`). Vincularlo al menú nativo mantiene el grupo
+en esa aplicación sin añadir una dependencia exclusiva de Enterprise. La raíz
+anterior `account.menu_finance` pertenece a Facturación y puede aparecer como
+otra aplicación si un módulo le añade opciones.
+Actualizar el módulo desde Aplicaciones y recargar la página para renovar los
+menús. Se reutilizan los mismos registros de menú y se mantienen sus permisos.
+Subir el código al servidor sin actualizar el módulo no aplica este cambio.
+
+La versión 19.0.1.4.2 llena **Banco** y **Data** por mes con los movimientos
+contables disponibles cuando faltan transacciones bancarias, en lugar de dejar
+depósitos y conceptos en `n.d.`. Conserva las reglas, el formato cargado y los
+saldos capturados, e identifica la fuente mensual. Actualizar el módulo y pulsar
+**Generar nueva versión** para regenerar el archivo; los XLSX ya guardados no se
+modifican. No requiere volver a cargar la plantilla ni recrear las reglas.

@@ -1,0 +1,31 @@
+<odoo>
+    <record id="cq_bank_balance_list" model="ir.ui.view">
+        <field name="name">cq.bank.balance.list</field><field name="model">cq.bank.balance</field>
+        <field name="arch" type="xml"><list>
+            <field name="company_id" groups="base.group_multi_company"/><field name="account_id"/>
+            <field name="year"/><field name="month"/><field name="currency_id"/>
+            <field name="opening_balance"/><field name="closing_balance"/><field name="name"/>
+            <field name="write_uid" optional="hide"/><field name="write_date" optional="hide"/>
+        </list></field>
+    </record>
+    <record id="cq_bank_balance_form" model="ir.ui.view">
+        <field name="name">cq.bank.balance.form</field><field name="model">cq.bank.balance</field>
+        <field name="arch" type="xml"><form><sheet>
+            <p>Transcriba los saldos del estado de cuenta del banco, en la moneda indicada. El cero es un saldo válido. Esta captura no crea movimientos ni modifica la contabilidad.</p>
+            <field name="available_account_ids" invisible="True"/>
+            <group><group>
+                <field name="company_id"/><field name="account_id" domain="[('id', 'in', available_account_ids)]"/>
+                <field name="year"/><field name="month"/>
+            </group><group>
+                <field name="currency_id"/><field name="opening_balance"/><field name="closing_balance"/>
+                <field name="name" placeholder="Por ejemplo: Estado BAC agosto 2026"/>
+            </group></group>
+            <field name="note"/>
+            <group string="Registro"><field name="create_uid"/><field name="create_date"/><field name="write_uid"/><field name="write_date"/></group>
+            <p>Genere una nueva versión del reporte después de guardar o corregir estos saldos. Los resultados ya generados conservan su copia anterior. Si existen extractos de Odoo, se mantienen como fuente y las discrepancias se muestran para revisión.</p>
+        </sheet></form></field>
+    </record>
+    <record id="action_cq_bank_balances" model="ir.actions.act_window">
+        <field name="name">Saldos según banco</field><field name="res_model">cq.bank.balance</field><field name="view_mode">list,form</field>
+    </record>
+</odoo>

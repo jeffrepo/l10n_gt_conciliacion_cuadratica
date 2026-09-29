@@ -1,0 +1,87 @@
+name: Odoo 19
+on:
+  push:
+    branches: ['19.0', master, main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: custom/l10n_gt_conciliacion_cuadratica
+      - uses: actions/checkout@v4
+        with:
+          repository: odoo/odoo
+          ref: '19.0'
+          path: odoo
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencias del sistema
+        run: sudo apt-get update && sudo apt-get install -y libldap2-dev libsasl2-dev libpq-dev libxml2-dev libxslt1-dev libjpeg-dev zlib1g-dev libssl-dev
+      - name: Dependencias Python
+        run: python -m pip install -r odoo/requirements.txt openpyxl
+      - name: Cálculos y XLSX
+        working-directory: custom/l10n_gt_conciliacion_cuadratica
+        run: python -m unittest discover -s tests_unit -v
+      - name: Instalación y pruebas en Odoo 19
+        run: >-
+          python odoo/odoo-bin
+          --addons-path=odoo/addons,custom
+          --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
+          --database=cq_test --init=l10n_us,l10n_gt_conciliacion_cuadratica
+          --without-demo --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica
+          --stop-after-init --http-port=8071 --http-interface=127.0.0.1 --max-cron-threads=0
+          --log-level=test --logfile=odoo-test.log
+      - name: Verificar ejecución de pruebas de integración
+        run: python custom/l10n_gt_conciliacion_cuadratica/tests_unit/check_integration_log.py odoo-test.log
+      - uses: actions/checkout@v4
+        with:
+          ref: '88d97c25a1c8ad1d5002a6ef5242a860806174ce'
+          path: legacy/l10n_gt_conciliacion_cuadratica
+      - name: Instalar versión anterior en base de actualización
+        run: >-
+          python odoo/odoo-bin --addons-path=odoo/addons,legacy
+          --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
+          --database=cq_upgrade --init=l10n_us,l10n_gt_conciliacion_cuadratica
+          --without-demo --stop-after-init --http-port=8071 --http-interface=127.0.0.1
+          --max-cron-threads=0 --logfile=odoo-legacy.log
+      - name: Actualizar módulo y probar agrupación por cuenta contable
+        run: >-
+          python odoo/odoo-bin --addons-path=odoo/addons,custom
+          --db_host=127.0.0.1 --db_port=5432 --db_user=odoo --db_password=odoo
+          --database=cq_upgrade --update=l10n_gt_conciliacion_cuadratica
+          --without-demo --test-enable --test-tags=/l10n_gt_conciliacion_cuadratica
+          --stop-after-init --http-port=8071 --http-interface=127.0.0.1 --max-cron-threads=0
+          --log-level=test --logfile=odoo-upgrade.log
+      - name: Verificar pruebas tras actualización
+        run: python custom/l10n_gt_conciliacion_cuadratica/tests_unit/check_integration_log.py odoo-upgrade.log
+      - name: Publicar registro de pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-test-log
+          path: |
+            odoo-test.log
+            odoo-legacy.log
+            odoo-upgrade.log

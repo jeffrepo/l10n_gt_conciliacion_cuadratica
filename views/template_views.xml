@@ -1,0 +1,18 @@
+<odoo>
+    <record id="cq_template_list" model="ir.ui.view">
+        <field name="name">cq.xlsx.template.list</field><field name="model">cq.xlsx.template</field>
+        <field name="arch" type="xml"><list><field name="name"/><field name="company_id" groups="base.group_multi_company"/><field name="account_id"/><field name="sequence"/><field name="file_name"/><field name="active" optional="hide"/></list></field>
+    </record>
+    <record id="cq_template_form" model="ir.ui.view">
+        <field name="name">cq.xlsx.template.form</field><field name="model">cq.xlsx.template</field>
+        <field name="arch" type="xml"><form string="Plantilla de conciliación"><sheet>
+            <group><group><field name="name"/><field name="company_id"/><field name="account_id" domain="[('company_ids', 'in', [company_id]), ('account_type', '=', 'asset_cash')]"/></group>
+                <group><field name="sequence"/><field name="active"/><field name="file_name" invisible="1"/><field name="file_data" filename="file_name" options="{'accepted_file_extensions': '.xlsx'}"/></group></group>
+            <div class="alert alert-info" role="alert">Use el formato de referencia con dos columnas por mes y hojas Banco y Data (encabezados en fila 7 u 8). Se conservan su diseño, los rótulos de bancos y contrapartes de los desgloses, las notas fuera del área financiera y las hojas adicionales.</div>
+            <p>Odoo reemplaza los saldos, importes y fórmulas del cuadro financiero, la tabla de movimientos y su panel de control. Los importes escritos previamente en esas celdas no se incorporan como ajustes manuales. Las hojas “Partidas conciliatorias” y “Control Odoo” se generan automáticamente. Use una hoja de notas para información manual adicional.</p>
+            <p>Los datos disponibles en Odoo prevalecen. Si falta el banco o el número de cuenta de cabecera, se conserva el texto de esta plantilla y se identifica su procedencia en el control. Los rótulos manuales no permiten adivinar el banco de un movimiento sin correspondencia. El archivo descargado es editable.</p>
+            <p>Cada resultado conserva una copia de la plantilla utilizada. Cambiar este archivo afecta únicamente a las nuevas versiones del reporte.</p>
+        </sheet></form></field>
+    </record>
+    <record id="action_cq_templates" model="ir.actions.act_window"><field name="name">Plantillas XLSX</field><field name="res_model">cq.xlsx.template</field><field name="view_mode">list,form</field></record>
+</odoo>
