@@ -55,7 +55,7 @@ ALIASES = {
     "bank_opening": ("Saldo inicial segun banco",),
     "available": ("Total depositos del periodo",),
     "expense": ("Total egresos",),
-    "bank_end": ("Saldo final bancario",),
+    "bank_end": ("Saldo final bancario", "Saldo calculado"),
     "deposits": ("Depositos en transito",),
     "checks": ("Cheques en circulacion",),
     "book_balance": ("Saldo final segun libros",),
@@ -85,7 +85,7 @@ def read_template(data):
         raise ValueError("El archivo no es una plantilla XLSX válida.") from error
     mains = [sheet for sheet in book if normalized(sheet["C19"].value) == "saldoinicialsegunbanco"]
     datas = [(sheet, row) for sheet in book for row in (7, 8)
-             if normalized(sheet.cell(row, 1).value) == "mesdecobro"
+             if normalized(sheet.cell(row, 1).value) in ("mesdecobro", "mesdelmovimiento")
              and normalized(sheet.cell(row, 9).value) == "ingreso"
              and normalized(sheet.cell(row, 10).value) == "egreso"]
     if len(mains) != 1 or len(datas) != 1 or mains[0] == datas[0][0]:
@@ -290,6 +290,7 @@ def fill_template(profile, generated, layout, snapshot):
         old_dimension = dimensions.get(item.get("template_row"))
         wanted = source_main.row_dimensions[item["row"]].height or 15
         main.row_dimensions[item["row"]].height = max(wanted, old_dimension.height or 15) if old_dimension else wanted
+    main.row_dimensions[16].height = source_main.row_dimensions[16].height
     for merged in source_main.merged_cells.ranges:
         if merged.max_row <= new_end:
             main.merge_cells(str(merged))
@@ -332,15 +333,15 @@ def fill_template(profile, generated, layout, snapshot):
 
     data_header = profile["data_header"]
     offset = data_header - 7
-    original_data_styles = {(row, col): copy(data_sheet.cell(row + offset, col)) for row in (7, 8, 9) for col in range(1, 24)}
+    original_data_styles = {(row, col): copy(data_sheet.cell(row + offset, col)) for row in (7, 8, 9) for col in range(1, 25)}
     table_names = list(data_sheet.tables)
     table_style = copy(data_sheet.tables[table_names[0]].tableStyleInfo) if table_names else None
     for name in table_names:
         del data_sheet.tables[name]
     for merged in list(data_sheet.merged_cells.ranges):
-        if merged.max_row >= data_header and merged.min_col <= 23:
+        if merged.max_row >= data_header and merged.min_col <= 24:
             data_sheet.unmerge_cells(str(merged))
-    for row in data_sheet.iter_rows(min_row=data_header, max_col=23):
+    for row in data_sheet.iter_rows(min_row=data_header, max_col=24):
         for cell in row:
             cell.value = None
             cell.hyperlink = None
@@ -365,10 +366,10 @@ def fill_template(profile, generated, layout, snapshot):
     table = Table(displayName=table_names[0] if table_names else "MovimientosCQ", ref="A%s:K%s" % (data_header, last_data_row))
     table.tableStyleInfo = table_style
     data_sheet.add_table(table)
-    data_sheet.auto_filter.ref = "A%s:W%s" % (data_header, last_data_row)
+    data_sheet.auto_filter.ref = "A%s:X%s" % (data_header, last_data_row)
     data_sheet.freeze_panes = "A%s" % (data_header + 2)
     data_sheet.row_dimensions[data_header].height = max(data_sheet.row_dimensions[data_header].height or 15, 30)
-    data_sheet.print_area = "A1:W%s" % last_data_row
+    data_sheet.print_area = "A1:X%s" % last_data_row
     data_sheet.protection.sheet = False
 
     for name in ("Partidas conciliatorias", "Control Odoo"):

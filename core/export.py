@@ -9,6 +9,7 @@ import xlsxwriter
 
 from .calculation import MONTHS, decimal, money
 from .reference import reference_formats, summary
+from .flows import form_snapshot
 
 
 def safe_filename(value):
@@ -60,15 +61,21 @@ def _link(sheet, row, col, snapshot, model, source_id, label="Abrir en Odoo"):
 
 
 def _movements(sheet, snapshot, fmt):
+    snapshot = form_snapshot(snapshot)
+    has_accounting_flows = any(month["flow_source"] == "accounting" for month in snapshot["months"])
     meta = snapshot["metadata"]
     sheet.write_string("D1", "EMPRESA: " + meta["company"], fmt["label"])
-    sheet.write_string("D2", "MOVIMIENTO BANCARIO AÑO %s" % snapshot["year"], fmt["label"])
+    title = "MOVIMIENTOS DEL INFORME AÑO %s" if has_accounting_flows else "MOVIMIENTO BANCARIO AÑO %s"
+    sheet.write_string("D2", title % snapshot["year"], fmt["label"])
     sheet.write_string("D3", meta["bank"] or "Banco no identificado", fmt["label"])
     headers = ["Mes de cobro", "Código", "Movimiento", "Fecha Contabilidad", "DOCTO #", "NOMBRE", "Concepto", "REF.", "INGRESO", "EGRESO", "SALDO", "Fecha banco", "Fechas documentos vinculados", "Clasificación", "Importe contable", "Moneda contable", "Documentos vinculados", "Banco contraparte", "Cuenta contraparte", "Observación", "Origen clasificación", "Odoo", "Diario de origen"]
+    headers.append("Origen del movimiento")
+    if has_accounting_flows:
+        headers[0], headers[10] = "Mes del movimiento", "SALDO CALCULADO"
     widths = [9.57, 8.14, 10.71, 14, 20, 30.14, 53.14, 11.43, 14.43, 16.29, 17.29]
     for col, width in enumerate(widths):
         sheet.set_column(col, col, width)
-    sheet.set_column(11, 22, 24)
+    sheet.set_column(11, 23, 24)
     sheet.write_row(6, 0, headers, fmt["data_head"])
     sheet.set_row(6, 30)
     sheet.write_string("G8", "Saldo inicial", fmt["label"])
@@ -93,7 +100,8 @@ def _movements(sheet, snapshot, fmt):
             code = allocation["code"]
             origin = _origin(allocation["origin"])
             sheet.write_datetime(row, 3, date.fromisoformat(movement.get("accounting_date") or movement["date"]), fmt["date"])
-            sheet.write_datetime(row, 11, date.fromisoformat(movement["date"]), fmt["date"])
+            if movement["flow_source"] == "bank":
+                sheet.write_datetime(row, 11, date.fromisoformat(movement["date"]), fmt["date"])
             values = {
                 0: MONTHS[int(movement["date"][5:7]) - 1].upper(), 1: report_codes.get(code, ""),
                 2: movement["method"], 4: movement["document"], 5: movement["partner"],
@@ -103,6 +111,7 @@ def _movements(sheet, snapshot, fmt):
                 17: movement["counterparty_bank"], 18: movement["counterparty_account"],
                 19: allocation.get("note") or movement["note"], 20: origin,
                 22: movement.get("journal", ""),
+                23: "Contabilidad Odoo" if movement["flow_source"] == "accounting" else "Transacción bancaria",
             }
             for col, value in values.items():
                 sheet.write_string(row, col, value or "", fmt["text"])
@@ -114,7 +123,7 @@ def _movements(sheet, snapshot, fmt):
                 else:
                     sheet.write_number(row, 10, movement["running_balance"], fmt["money"])
             sheet.write_number(row, 14, float(company_value), fmt["money"])
-            _link(sheet, row, 21, snapshot, "account.bank.statement.line", movement["source_id"])
+            _link(sheet, row, 21, snapshot, movement["source_model"], movement["source_id"])
             row += 1
     sheet.autofilter(6, 0, max(row - 1, 7), len(headers) - 1)
 

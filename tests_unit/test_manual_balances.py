@@ -85,7 +85,7 @@ class TestManualBalances(unittest.TestCase):
         jan = build_snapshot(data)["months"][0]
         self.assertEqual((jan["bank_adjusted"], jan["book_adjusted"], jan["difference"]), (1215, 1215, 0))
 
-    def test_exports_fill_captures_and_keep_missing_flows_unknown(self):
+    def test_exports_fill_captures_and_accounting_flows_with_independent_close(self):
         data = accounting_fixture()
         data["manual_bank_balances"] = {"1": capture(1000, 1195), "2": capture(1195, 1170)}
         template = template_workbook()
@@ -99,8 +99,8 @@ class TestManualBalances(unittest.TestCase):
                 bank = book["Banco"]
                 self.assertEqual(book.active.title, "Resumen contable Odoo")
                 self.assertEqual([bank.cell(19, c).value for c in (7, 9, 11, 31)], [1000, 1195, 1170, 1000])
-                self.assertEqual(bank["G20"].value, "n.d.")
-                self.assertEqual(bank["G21"].value, "n.d.")
+                self.assertEqual(bank["G20"].value, 400)
+                self.assertEqual(bank["G21"].value, 400)
                 self.assertIsNone(bank["M19"].value)
                 self.assertEqual(book["Data"]["K8"].value, 1000)
                 closing_row = row_for(bank, "Saldo final según banco (extracto o captura)")
@@ -108,7 +108,7 @@ class TestManualBalances(unittest.TestCase):
                 self.assertEqual(bank.cell(closing_row, 7).value, 1195)
                 self.assertEqual(bank.cell(adjusted_row, 7).value, 1195)
                 self.assertEqual(bank.cell(adjusted_row, 11).value, "n.d.")
-                self.assertIn("IF(ISNUMBER(", formulas.cell(adjusted_row, 7).value)
+                self.assertTrue(formulas.cell(adjusted_row, 7).value.startswith("=G%s+" % closing_row))
                 self.assertFalse(any(c.data_type == "e" for s in book for row in s for c in row))
                 if source:
                     footer = row_for(bank, "Banco inicial")

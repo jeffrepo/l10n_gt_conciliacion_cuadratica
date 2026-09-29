@@ -371,6 +371,12 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
         self.assertEqual(workbook["Resumen contable Odoo"]["B6"].value, 100)
         self.assertEqual(workbook["Mayor bancario Odoo"]["I6"].value, 600)
         self.assertEqual(workbook["Banco"]["G19"].value, "n.d.")
+        self.assertEqual(workbook["Banco"]["G20"].value, 100)
+        self.assertEqual(workbook["Banco"]["G21"].value, 100)
+        self.assertEqual(workbook["Banco"]["I20"].value, 0)
+        self.assertEqual(workbook["Data"]["I9"].value, 100)
+        self.assertEqual(workbook["Data"]["X9"].value, "Contabilidad Odoo")
+        self.assertIsNone(workbook["Data"]["L9"].value)
         self.assertEqual(workbook.active.title, "Resumen contable Odoo")
         with self.assertRaises(UserError):
             report.action_confirm()
@@ -426,8 +432,14 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
             "concept_id": self.env.ref("l10n_gt_conciliacion_cuadratica.concept_in_related").id,
             "partner_ids": [Command.set(self.partner_a.ids)],
         })
-        row = self._report().payload["accounting_movements"][0]
+        report = self._report()
+        row = report.payload["accounting_movements"][0]
         self.assertEqual((row["concept_code"], row["classification_origin"]), ("IN_RELATED", "rule"))
+        workbook = load_workbook(BytesIO(report._xlsx_bytes()), data_only=True)
+        self.assertEqual(workbook["Banco"]["G20"].value, 100)
+        self.assertEqual(workbook["Banco"]["G23"].value, 100)
+        self.assertEqual(workbook["Banco"]["F25"].value, 100)
+        self.assertEqual(workbook["Data"]["U9"].value, "Regla")
 
     def test_unknown_country_and_conflicting_rules_are_not_auto_classified(self):
         self._customer_payment(direct=True)
@@ -733,6 +745,11 @@ class TestQuadraticReconciliation(AccountTestInvoicingCommon):
             report.action_confirm()
         report.action_export()
         exported = report._xlsx_bytes()
+        workbook = load_workbook(BytesIO(exported), data_only=True)
+        self.assertEqual(workbook["Banco"]["G19"].value, 0)
+        self.assertEqual(workbook["Banco"]["G20"].value, 100)
+        self.assertEqual(workbook["Banco"]["G21"].value, 100)
+        self.assertEqual(workbook["Data"]["K9"].value, 100)
         old_payload = deepcopy(report.payload)
         capture.closing_balance = 105
         updated = self._report()

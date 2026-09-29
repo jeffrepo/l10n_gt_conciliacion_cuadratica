@@ -1,6 +1,6 @@
 # Conciliación cuadrática para Odoo 19
 
-Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.1`.
+Módulo independiente `l10n_gt_conciliacion_cuadratica`, versión `19.0.1.4.2`.
 Genera un XLSX por compañía y **cuenta contable bancaria** (`account.account`), con resumen de enero al mes de
 corte, movimientos clasificados y partidas conciliatorias. Depende únicamente
 de `account` y de las bibliotecas Python `xlsxwriter` y `openpyxl`; funciona sobre los modelos
@@ -82,8 +82,12 @@ que afecten esa cuenta, sin repetir apuntes por cada diario configurado. Los
 importes usan la moneda de la cuenta y el importe histórico disponible; no se
 reconstruyen monedas faltantes con el tipo de cambio actual.
 
-Estas dos hojas son salidas reservadas, también al usar una plantilla. No se
-suman a **Data**, que sigue representando transacciones bancarias. El resumen
+Estas dos hojas son salidas reservadas, también al usar una plantilla. En cada
+mes sin transacciones bancarias ni extracto completo de control, **Banco** y
+**Data** se llenan con los apuntes publicados de esa cuenta: depósitos, egresos,
+conceptos y desgloses. Se usa una sola fuente por mes, sin sumar pagos contables
+y transacciones bancarias entre sí. Un extracto completo de un mes sin actividad
+mantiene los movimientos bancarios en cero. El resumen
 contable corresponde solo a la cuenta del banco; la sección de conciliación de
 libros también considera las cuentas pendientes y transitorias configuradas.
 **Ver apuntes contables** abre los documentos que respaldan el detalle.
@@ -96,6 +100,22 @@ identifica los saldos sin respaldo; esas celdas quedan vacías en lugar de
 mostrar un cero. Cuando no hay transacciones bancarias, el XLSX abre primero
 **Resumen contable Odoo**, seguido del mayor, también con una plantilla.
 El formulario bancario permanece disponible y conserva su formato.
+
+La fila **Origen de los movimientos** identifica los meses que usan
+**Contabilidad Odoo**. **Data** muestra ese mismo origen y abre el apunte original;
+su fecha bancaria queda vacía cuando no existe. Las reglas ya configuradas
+alimentan los conceptos (clientes locales, exterior, relacionadas, proveedores,
+etc.). Los importes sin concepto se incluyen una sola vez en **Otros ingresos /
+egresos → Pendiente de clasificar**. Los meses consultados sin apuntes muestran
+cero; los posteriores al corte siguen vacíos.
+
+La apertura y el cierre **según banco** continúan tomándose de extractos o de las
+capturas mensuales. Cuando se usan flujos contables, **SALDO CALCULADO (A - B)**
+muestra apertura informada más ingresos menos egresos. El **SALDO CONCILIADO**
+bancario usa el cierre informado independientemente, con sus partidas pendientes;
+no usa el saldo calculado desde libros para certificar una conciliación bancaria.
+Si no hay apertura o cierre respaldado, esos saldos permanecen `n.d.` aunque los
+conceptos ya tengan importes. Las reglas nuevas se aplican al **Generar nueva versión**.
 
 Si hay apuntes pero no transacciones bancarias en el período, se muestra un
 pendiente específico. Un saldo contable no acredita un saldo según banco:
@@ -140,9 +160,10 @@ informado del saldo calculado como apertura más depósitos menos egresos.
 Con transacciones bancarias existentes, una apertura capturada puede respaldar
 su reconstrucción; la captura por sí sola no acredita esos movimientos.
 
-Sin transacciones ni saldos calculados, depósitos y egresos bancarios se muestran
-como `n.d.`; los pagos, cobros y asientos siguen visibles en **Resumen contable**
-y **Mayor bancario Odoo**. El cierre informado permite comparar banco ajustado
+Sin transacciones bancarias, el formato presenta depósitos y egresos desde
+contabilidad cuando está disponible, identificando su origen; si tampoco dispone
+de esa fuente, se muestran como `n.d.`. Los pagos, cobros y asientos siguen visibles
+en **Resumen contable** y **Mayor bancario Odoo**. El cierre informado permite comparar banco ajustado
 con libros ajustados, manteniendo un pendiente por falta de movimientos.
 
 Después de guardar o corregir capturas, **generar una nueva versión** del reporte.
@@ -389,3 +410,10 @@ otra aplicación si un módulo le añade opciones.
 Actualizar el módulo desde Aplicaciones y recargar la página para renovar los
 menús. Se reutilizan los mismos registros de menú y se mantienen sus permisos.
 Subir el código al servidor sin actualizar el módulo no aplica este cambio.
+
+La versión 19.0.1.4.2 llena **Banco** y **Data** por mes con los movimientos
+contables disponibles cuando faltan transacciones bancarias, en lugar de dejar
+depósitos y conceptos en `n.d.`. Conserva las reglas, el formato cargado y los
+saldos capturados, e identifica la fuente mensual. Actualizar el módulo y pulsar
+**Generar nueva versión** para regenerar el archivo; los XLSX ya guardados no se
+modifican. No requiere volver a cargar la plantilla ni recrear las reglas.

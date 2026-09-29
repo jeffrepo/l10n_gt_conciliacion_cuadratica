@@ -9,6 +9,7 @@ from collections import defaultdict
 from xlsxwriter.utility import xl_rowcol_to_cell
 
 from .calculation import MONTHS, decimal
+from .flows import form_snapshot
 
 
 def reference_formats(book):
@@ -59,7 +60,10 @@ def _groups(snapshot, code, bank_only=False, profile=None):
 
 
 def summary(sheet, snapshot, confirmed, fmt, profile=None):
+    source_snapshot = snapshot
+    snapshot = form_snapshot(snapshot)
     meta, months = snapshot["metadata"], snapshot["months"]
+    has_accounting_flows = any(month["flow_source"] == "accounting" for month in months)
     currency = {"GTQ": "Quetzales", "USD": "Dólares"}.get(meta["currency"], meta["currency"])
     symbol = {"GTQ": "Q.", "USD": "$"}.get(meta["currency"], meta["currency"])
     sheet.set_default_row(15)
@@ -103,6 +107,12 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     merge(18, 3, 5, "CONCEPTOS", "head")
     for idx, label in enumerate((*MONTHS, "TOTALES")):
         merge(18, 6 + idx * 2, 7 + idx * 2, label.upper(), "head")
+    if has_accounting_flows:
+        sheet.set_row(15, 28)
+        merge(16, 3, 5, "Origen de los movimientos", "concept")
+        for idx, month in enumerate(months):
+            label = "Contabilidad Odoo" if month["flow_source"] == "accounting" else "Transacciones bancarias"
+            merge(16, 6 + idx * 2, 7 + idx * 2, label, "warn")
     sheet.freeze_panes(18, 5)
     sheet.repeat_rows(16, 17)
     sheet.repeat_columns(1, 4)
@@ -179,7 +189,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     concept("IN_SUPPLIER_REFUNDS", "Reintegro por devoluciones a proveedores")
     concept("IN_LOAN_REPAYMENTS", "Devoluciones por préstamos")
     income_keys = ["IN_CUSTOMERS_LOCAL", "IN_CUSTOMERS_FOREIGN", "IN_RELATED", "IN_SHAREHOLDERS", "IN_EMPLOYEES", "IN_ADVANCES", "IN_INTEREST", "IN_TRANSFER", other_in, "IN_SUPPLIER_REFUNDS", "IN_LOAN_REPAYMENTS"]
-    add("available", "TOTAL DEPÓSITOS DEL PERÍODO", [None if month["bank_opening"] is None else float(decimal(month["bank_opening"]) + decimal(month["income"])) for month in months], code="A", style="total_label", annual="available",
+    add("available", "TOTAL DEPÓSITOS DEL PERÍODO", [None if month["reported_bank_opening"] is None else float(decimal(month["reported_bank_opening"]) + decimal(month["income"])) for month in months], code="A", style="total_label", annual="available",
         formula=lambda col: "=%s+SUM(%s)" % (cell("bank_opening", col), ",".join(cell(key, col) for key in income_keys)))
     add("out_heading", "EGRESOS", code="( - )", style="section")
     concept("OUT_SUPPLIERS", "Proveedores")
@@ -194,9 +204,9 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     other_out = other("out", "Otros egresos (especifique):", ("OUT_TAXES", "OUT_FEES", "OUT_CHECKS", "OUT_INTEREST", "OUT_LOANS_GRANTED"))
     expense_keys = ["OUT_SUPPLIERS", "OUT_OPERATING", "OUT_ADVANCES", "OUT_LOANS", "OUT_DIVIDENDS", "OUT_SHAREHOLDERS", "OUT_RELATED_LOCAL", "OUT_RELATED_FOREIGN", "OUT_TRANSFER", other_out]
     metric("expense", "TOTAL EGRESOS", annual="sum", code="B", style="total_label", formula=lambda col: "=SUM(%s)" % ",".join(cell(key, col) for key in expense_keys))
-    metric("bank_end", "SALDO FINAL BANCARIO ( A - B )", style="total_label", formula=lambda col: "=%s-%s" % (cell("available", col), cell("expense", col)))
-    has_manual_balances = any(month.get("manual_balance") for month in months)
-    if has_manual_balances:
+    metric("bank_end", "SALDO CALCULADO ( A - B )" if has_accounting_flows else "SALDO FINAL BANCARIO ( A - B )", style="total_label", formula=lambda col: "=%s-%s" % (cell("available", col), cell("expense", col)))
+    has_reported_closing = has_accounting_flows or any(month.get("manual_balance") for month in months)
+    if has_reported_closing:
         add(
             "reported_closing", "Saldo final según banco (extracto o captura)", [month["statement_end"] for month in months], annual="last")
     add("bank_adjustments", "AJUSTES")
@@ -206,7 +216,10 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     add("bank_note", "Otros pagos pendientes de cargo", style="detail")
     def adjusted_formula(col):
         base = cell("bank_end", col)
-        if has_manual_balances:
+        month = months[min((col - 6) // 2, len(months) - 1)]
+        if month["flow_source"] == "accounting":
+            base = cell("reported_closing", col)
+        elif has_reported_closing:
             base = "IF(ISNUMBER(%s),%s,%s)" % (base, base, cell("reported_closing", col))
         return "=%s+%s-%s+%s" % (base, cell("deposits", col), cell("checks", col), cell("other_bank", col))
 
@@ -216,7 +229,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
     add("book_adjustments", "AJUSTES")
     # Only identifiable interest still in suspense belongs in the book
     # adjustment. Already recorded interest must not be added a second time.
-    interest_moves = {move["move_id"] for move in snapshot["movements"] if move["amount"] > 0 and move["allocations"] and all(item["code"] == "IN_INTEREST" for item in move["allocations"])}
+    interest_moves = {move["move_id"] for move in source_snapshot["movements"] if move["amount"] > 0 and move["allocations"] and all(item["code"] == "IN_INTEREST" for item in move["allocations"])}
     interest, debits, receipts = [], [], []
     for month in months:
         suspense = [item for item in snapshot["pending"] if item["month"] == month["number"] and item["kind"] == "suspense"]
@@ -241,7 +254,6 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         else:
             sheet.write_number(row, col, value, fmt[style])
 
-    bank_flows_missing = not snapshot["movements"] and all(month["bank_end"] is None for month in months)
     for item in rows:
         row = item["row"] - 1
         if item.get("header"):
@@ -271,16 +283,14 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         if item["values"] is None:
             continue
         offset = 5 if item["left"] else 6
-        if bank_flows_missing and index["in_heading"] <= item["row"] < index["bank_end"]:
-            # Missing statements do not establish zero deposits/withdrawals.
-            for idx in range(len(months)):
-                put(row, offset + idx * 2, None, style)
-            put(row, 29 if item["left"] else 30, None, style)
-            continue
+        flow_row = index["in_heading"] <= item["row"] < index["bank_end"]
         for idx, value in enumerate(item["values"]):
             col = offset + idx * 2
             formula = item["formula"](col) if item["formula"] else None
-            if item["key"] == "bank_opening" and idx and not months[idx].get("manual_opening_used"):
+            if flow_row and not months[idx]["flows_available"]:
+                value = None
+            if (item["key"] == "bank_opening" and idx and not months[idx].get("manual_opening_used")
+                    and months[idx]["flow_source"] == months[idx - 1]["flow_source"] == "bank"):
                 formula = "=" + cell("bank_end", col - 2)
             put(row, col, value, style, formula)
         annual_col = 29 if item["left"] else 30
@@ -288,7 +298,7 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
             value = float(sum((decimal(value) for value in item["values"]), decimal(0)))
             formula = "=SUM(%s)" % ",".join(xl_rowcol_to_cell(row, offset + idx * 2) for idx in range(len(months)))
         elif item["annual"] == "available":
-            value = None if months[0]["bank_opening"] is None else float(decimal(months[0]["bank_opening"]) + sum((decimal(month["income"]) for month in months), decimal(0)))
+            value = None if months[0]["reported_bank_opening"] is None else float(decimal(months[0]["reported_bank_opening"]) + sum((decimal(month["income"]) for month in months), decimal(0)))
             formula = item["formula"](annual_col)
         else:
             idx = 0 if item["annual"] == "first" else len(months) - 1
@@ -297,6 +307,8 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         # Subtotals in the total column reference their own detail totals.
         if item["formula"] and item["annual"] == "sum" and item["key"] != "expense":
             formula = item["formula"](annual_col)
+        if flow_row and not all(month["flows_available"] for month in months):
+            value = None
         put(row, annual_col, value, style, formula)
 
     # Controls and provenance sit below the form, leaving its visual hierarchy
@@ -312,7 +324,9 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         "Generado: %s · %s" % (meta["generated_at"], meta["generated_by"]),
     ]
     if "accounting_movements" in snapshot:
-        notes.append("Fuentes del período: %s transacciones bancarias · %s apuntes de la cuenta bancaria. Consulte Mayor bancario Odoo y Resumen contable Odoo; sus importes no sustituyen los extractos." % (len(snapshot["movements"]), len(snapshot["accounting_movements"])))
+        notes.append("Fuentes del período: %s transacciones bancarias · %s apuntes de la cuenta bancaria. Consulte Mayor bancario Odoo y Resumen contable Odoo." % (len(source_snapshot["movements"]), len(snapshot["accounting_movements"])))
+    if has_accounting_flows:
+        notes.append("Meses sin transacciones bancarias: depósitos, egresos y conceptos provienen de apuntes publicados de la cuenta bancaria. Data identifica el origen. El saldo calculado no acredita el saldo según banco.")
     for note in notes:
         merge(row, 2, 31, note, "warn" if "pendientes de revisión" in note and snapshot["issues"] else "label")
         sheet.set_row(row - 1, 24)
@@ -321,9 +335,9 @@ def summary(sheet, snapshot, confirmed, fmt, profile=None):
         merge(row, 3, 5, label, "concept")
         sheet.set_row(row - 1, 27)
         for idx, month in enumerate(months):
-            put(row - 1, 6 + idx * 2, None if key == "income" and bank_flows_missing else month[key], "money")
+            put(row - 1, 6 + idx * 2, None if key == "income" and not month["flows_available"] else month[key], "money")
         value = float(sum((decimal(month[key]) for month in months), decimal(0))) if key == "income" else months[-1][key]
-        put(row - 1, 30, None if key == "income" and bank_flows_missing else value, "money")
+        put(row - 1, 30, None if key == "income" and not all(month["flows_available"] for month in months) else value, "money")
         if key in ("bank_difference", "difference"):
             sheet.conditional_format(row - 1, 5, row - 1, 30, {"type": "cell", "criteria": "not between", "minimum": -float(snapshot["rounding"]) / 2, "maximum": float(snapshot["rounding"]) / 2, "format": fmt["error"]})
         row += 1
